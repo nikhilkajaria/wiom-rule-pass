@@ -1,0 +1,24 @@
+name: Weekly BFC-VOLUME review
+
+# The batched weekly edit (the core L1 + L3 rhythm, done together). Routine creative/geo edits
+# happen here, not daily - trickling daily changes resets Meta's learning phase.
+# Cron is UTC. '30 1 * * 1' = Monday 07:00 IST. Ensure the ETL completes before 07:00 IST.
+on:
+  schedule:
+    - cron: '30 1 * * 1'
+  workflow_dispatch: {}
+
+jobs:
+  weekly-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run weekly review (full batched roster) and post to Slack
+        run: python rule_pass.py --mode weekly
+        env:
+          WIOM_DASHBOARD_TOKEN: ${{ secrets.WIOM_DASHBOARD_TOKEN }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          # SLACK_DM_USER_ID defaults to U05A9037VFG in the script; override here only if it changes.

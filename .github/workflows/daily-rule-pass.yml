@@ -1,0 +1,24 @@
+name: Daily BFC-VOLUME rule-pass
+
+# Runs after the morning ETL and DMs the flagged kills to Slack.
+# GitHub Actions cron is UTC and can be delayed a few minutes under load.
+# 01:30 UTC = 07:00 IST. Ensure the ETL completes before 07:00 IST; push back if it runs later.
+on:
+  schedule:
+    - cron: '30 1 * * *'
+  workflow_dispatch: {}        # lets you trigger a manual run from the Actions tab
+
+jobs:
+  rule-pass:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run daily monitor (circuit-breakers only) and post to Slack
+        run: python rule_pass.py --mode daily
+        env:
+          WIOM_DASHBOARD_TOKEN: ${{ secrets.WIOM_DASHBOARD_TOKEN }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          # SLACK_DM_USER_ID defaults to U05A9037VFG in the script; override here only if it changes.

@@ -1,0 +1,10 @@
+# never commit secrets or local env
+.env
+.env.*
+*.env
+credentials.json
+*secret*
+*token*
+__pycache__/
+*.pyc
+.venv/

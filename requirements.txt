@@ -1,0 +1,2 @@
+# No third-party dependencies - rule_pass.py uses the Python standard library only
+# (urllib, json, statistics). Nothing to install. Kept for clarity / future deps.
