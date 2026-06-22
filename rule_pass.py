@@ -35,6 +35,8 @@ P2_LIFETIME_SPEND = 10000
 JUNK_MULT         = 2.0
 MIN_INSTALLS_JUNK = 50
 KILL_MULT         = {'L1': 1.0, 'L2': 1.0, 'L3': 1.2, 'untagged': 1.0}
+KILL_MULT_W1      = {'L1': 1.3, 'L2': 1.3, 'L3': 1.5, 'untagged': 1.3}
+W1_GRACE_MAX_AGE  = 13
 ISOLATE_MULT      = 0.7
 ISOLATE_BFC_GATE  = 12
 MATURE_GEOS       = {'Delhi'}
@@ -129,9 +131,12 @@ def decide(life, win, age, cstar):
                 tail = 'hook works, audience does not' if kind.endswith('ITERATE') else 'low intent'
                 res['kills'].append((cid, layer, kind, f"{inst} inst, book {100*bf/inst:.2f}% (< half median {100*med_book:.2f}%); {tail}", a)); continue
             if med and bf >= CREATIVE_BFC_GATE:
-                cpbfc = sp / bf; mult = KILL_MULT.get(layer, 1.0)
+                cpbfc = sp / bf
+                w1 = a <= W1_GRACE_MAX_AGE
+                mult = (KILL_MULT_W1 if w1 else KILL_MULT).get(layer, 1.0)
                 if cpbfc >= mult * med:
-                    res['kills'].append((cid, layer, 'EFFICIENCY KILL', f"CPBFC Rs{cpbfc:,.0f} >= {mult}x median (Rs{med:,.0f}); {bf} BFC, 7d spend Rs{sp:,.0f}", a)); continue
+                    grace = ' (W1 grace)' if w1 else ''
+                    res['kills'].append((cid, layer, 'EFFICIENCY KILL', f"CPBFC Rs{cpbfc:,.0f} >= {mult}x median{grace} (Rs{med:,.0f}); {bf} BFC, 7d spend Rs{sp:,.0f}", a)); continue
                 if cpbfc <= ISOLATE_MULT * med and bf >= ISOLATE_BFC_GATE:
                     res['isolates'].append((cid, layer, f"CPBFC Rs{cpbfc:,.0f} <= 0.7x median; {bf} BFC - break into own ad set", a))
     # geo budget (Tier 2): MATURE geo only -> SCALE if <= C*, else HOLD. The mature geo is never
