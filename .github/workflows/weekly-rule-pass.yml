@@ -20,5 +20,6 @@ jobs:
         run: python rule_pass.py --mode weekly
         env:
           WIOM_DASHBOARD_TOKEN: ${{ secrets.WIOM_DASHBOARD_TOKEN }}
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-          # SLACK_DM_USER_ID defaults to U05A9037VFG in the script; override here only if it changes.
+          # SLACK_CHANNEL_ID defaults to #growth-reports (C0B9G0Q68G6); SLACK_DM_USER_ID to U05A9037VFG. Override here only if they change.

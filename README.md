@@ -1,52 +1,43 @@
-# Daily BFC-VOLUME rule-pass -> Slack
+# BFC-VOLUME kill + prune pass -> Slack
 
-Every morning after the ETL, this reads the Growth Dashboard (read-only), applies the
-BFC-VOLUME kill rules on BOOKNOW-only / rolling-7-day / D-1 data, and DMs you the flagged
-kills so you can one-click review and pause in Ads Manager.
+Every morning after the ETL this reads the Growth Dashboard + Meta (both read-only), applies the
+BFC-VOLUME kill + prune rules per the **Operating Spec (post SD sign-off, 23 Jun 2026)**, and posts
+the day's decisions to **#growth-reports** (plus a DM copy) for one-click review in Ads Manager.
 
-**It never writes to any ad platform.** Pausing stays a manual, human step.
+**It never writes to any ad platform.** Pausing / scaling stays a manual, human step.
 
-## What it flags (v1)
-- **ZERO-BFC BLEED** - a concept with >= Rs10,000 of 7-day BOOKNOW spend and 0 bookings (circuit-breaker).
-- **EFFICIENCY-KILL** - a concept whose 7-day BOOKNOW CPBL is >= its ad-set median (L1/L2) or >= 1.2x median (L3), with a Rs3,000 min-spend gate and >= 3 peers for a trustworthy median.
+## What it does
+**Daily** (`--mode daily`, 07:00 IST): on the mature geo (Delhi), BOOKNOW-only, **lifetime** basis,
+**active-only median** (Meta `effective_status` filter), first-spend anchored:
+- **Efficiency kill** - CPBFC >= layer-multiplier x median (L1/L2 = 1.0x, L3 = 1.2x held), >=5 lifetime BFC.
+- **Zero-BFC kill** - 0 BFC and >= Rs10,000 lifetime spend.
+- **Cost-velocity brake** - spend >= max(5xC*, Rs15,000) and CPBFC >= 2x kill line -> KILL-REVIEW (human look).
+- **Pool-cap prune** - if the active pool > 15, cut the weakest (protect layer x need-state coverage, then rank by delivery-velocity minus inefficiency). No per-layer floor.
 
-Thresholds live at the top of `rule_pass.py` (`ZERO_BFC_SPEND`, `MIN_SPEND_7D`, `MIN_PEERS`, `KILL_MULT`). Confirm them against the framework doc, then tune in that one place.
+**Weekly** (`--mode weekly`, Mon 07:00 IST): ISOLATE candidates (<=0.7x median, >=12 BFC) + geo budget (SCALE/HOLD vs C*) + geo conversion (CAP/CUT).
 
-## One-time setup
+No calendar grace (the 5-BFC gate is the young-creative protection). If Meta is unavailable the run degrades to an all-eligible median and flags `active-filter OFF` rather than failing. All thresholds are constants at the top of `rule_pass.py`.
 
-### 1. Create the Slack app + bot token
-1. https://api.slack.com/apps -> Create New App -> From scratch -> workspace `wiomworkspace`.
-2. OAuth & Permissions -> Bot Token Scopes -> add `chat:write` and `im:write`.
-3. Install to Workspace -> copy the **Bot User OAuth Token** (`xoxb-...`).
-
-### 2. Create a PRIVATE GitHub repo and push these files
+## Run locally (reads `C:\credentials\.env`)
 ```
-cd C:\Users\nikhi\scripts\rule-pass-digest
-git init && git add . && git commit -m "Daily BFC-VOLUME rule-pass"
-# create a PRIVATE repo on github.com, then:
-git remote add origin <your-private-repo-url>
-git push -u origin main
+python rule_pass.py --mode daily  --dry-run            # print, no post
+python rule_pass.py --mode daily  --dm-only            # live test: posts to the DM only, skips the channel
+python rule_pass.py --mode daily  --date 2026-06-22    # anchor D-1 to a specific day
 ```
 
-### 3. Add repo secrets (Settings -> Secrets and variables -> Actions -> New repository secret)
-- `WIOM_DASHBOARD_TOKEN` = value of WIOM_DASHBOARD_TOKEN from `C:\credentials\.env`
-- `SLACK_BOT_TOKEN` = the `xoxb-...` token from step 1
+## Setup
+### Repo secrets (Settings -> Secrets and variables -> Actions)
+- `WIOM_DASHBOARD_TOKEN`, `META_ACCESS_TOKEN`, `SLACK_BOT_TOKEN` (all set).
 
-(No secrets ever go in the code. The repo must be private regardless.)
+### Slack
+- Bot scopes: `chat:write`, `im:write`.
+- **Invite the bot to #growth-reports** (`/invite @<bot>`), else channel posts fail with `not_in_channel`. The DM copy needs no invite.
+- Override target via env if needed: `SLACK_CHANNEL_ID` (default `C0B9G0Q68G6` = #growth-reports), `SLACK_DM_USER_ID` (default `U05A9037VFG`).
 
-### 4. Set the schedule
-Edit `.github/workflows/daily-rule-pass.yml` -> the `cron` line. It is **UTC**.
-`30 4 * * *` = 10:00 IST. Set it ~30-60 min after your ETL finishes.
-
-## Test before trusting it
-Locally (reads `C:\credentials\.env`, prints, does not post):
-```
-python rule_pass.py --dry-run
-python rule_pass.py --dry-run --date 2026-06-17     # anchor D-1 to a specific day
-```
-In GitHub: Actions tab -> "Daily BFC-VOLUME rule-pass" -> Run workflow (once the bot token secret is set, this posts to your DM).
+### Schedule
+`.github/workflows/*.yml` cron is **UTC**. `30 1 * * *` = 07:00 IST daily; `30 1 * * 1` = Mon 07:00 IST weekly. Keep ~30-60 min after the ETL.
 
 ## Notes
-- GitHub Actions cron runs in UTC and can be delayed a few minutes under load.
-- A "no kill-flags today" message is sent on clean days, so a silent day means the job did not run.
-- v1 has no geo-ceiling (C*) check and is not serviceability-adjusted - that is a planned v2.
+- Read-only: emits decisions, never pauses.
+- A "no kills, no brake, no prune" message is posted on clean days, so a silent day means the job did not run.
+- `META_ACCESS_TOKEN` should be a long-lived / system-user token; if it expires the active-filter degrades (flagged) until rotated.
