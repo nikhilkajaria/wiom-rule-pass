@@ -238,19 +238,25 @@ def ads_link():
     return f"<{ADS_MANAGER}?act={acct}|Open BFC-VOLUME in Ads Manager>"
 
 
+def integrity_line(res):
+    if res.get('active_filter'):
+        return "_Integrity: creative active-status vetted live from Meta (effective_status); paused excluded from the median and the lists._"
+    return "_Integrity:_ :warning: _active-status NOT vetted from Meta (unavailable) - basis = dashboard spend only, so recently-paused creatives may still appear. Verify in Ads Manager before acting._"
+
+
 def msg_daily(res, cstar, end):
     kills, reviews, cut = res['kills'], res['reviews'], res['prune_cut']
-    af = "" if res['active_filter'] else "  :warning: Meta active-filter OFF (median incl. paused)"
+    integ = integrity_line(res)
     if not kills and not reviews and not cut:
-        return f":white_check_mark: *BFC-VOLUME daily kill+prune* ({end}, DEL BOOKNOW, lifetime): no kills, no brake, no prune. Pool {res['pool_n']}/{POOL_CAP}.{af}"
+        return f":white_check_mark: *BFC-VOLUME daily kill+prune* ({end}, DEL BOOKNOW, lifetime): no kills, no brake, no prune. Pool {res['pool_n']}/{POOL_CAP}.\n{integ}"
     medlabel = "active-only median" if res['active_filter'] else "median (incl. paused)"
     if res['median']:
-        head = (f":scales: *BFC-VOLUME daily kill + prune* ({end}, DEL BOOKNOW, lifetime){af}\n"
+        head = (f":scales: *BFC-VOLUME daily kill + prune* ({end}, DEL BOOKNOW, lifetime)\n"
                 f"{medlabel} CPBFC Rs{res['median']:,.0f} | C* Rs{cstar:,.0f} | brake Rs{res['brake_spend']:,.0f} | pool {res['pool_n']}/{POOL_CAP}\n"
                 f"_Decisions for review - read-only, pausing is a manual step in Ads Manager._")
     else:
-        head = f":scales: *BFC-VOLUME daily kill + prune* ({end}){af}"
-    lines = [head, ""]
+        head = f":scales: *BFC-VOLUME daily kill + prune* ({end})"
+    lines = [head, integ, ""]
     if kills:
         lines.append(f"*KILL ({len(kills)})*")
         for k in kills: lines.append(_row(*k))
@@ -270,10 +276,11 @@ def msg_daily(res, cstar, end):
 
 def msg_weekly(res, cstar, start, end):
     isos = res['isolates']
+    integ = integrity_line(res)
     if not isos and not res['geo_budget'] and not res['geo_conv']:
-        return f":memo: BFC-VOLUME weekly review ({start} to {end}): no isolate/geo actions."
+        return f":memo: BFC-VOLUME weekly review ({start} to {end}): no isolate/geo actions.\n{integ}"
     lines = [f":memo: *BFC-VOLUME weekly review* ({start} to {end}, DEL BOOKNOW, lifetime)",
-             "_Scale/isolate + structural geo layer. Daily handles kills/brake/prune._", ""]
+             "_Scale/isolate + structural geo layer. Daily handles kills/brake/prune._", integ, ""]
     if isos:
         lines.append(f"*ISOLATE candidates* (<=0.7x median, >=12 BFC -> own ad set) ({len(isos)})")
         for (c, lyr, need, lb, sp, x) in isos: lines.append(_row(c, lyr, need, lb, sp, x, "break into own ad set"))
