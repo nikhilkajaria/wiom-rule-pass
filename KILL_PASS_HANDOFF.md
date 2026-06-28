@@ -50,7 +50,9 @@ Basis for the daily pass: mature geo = Delhi, BOOKNOW-only, LIFETIME basis, acti
 median (Meta `effective_status` filter), first-spend anchored, no calendar grace (the
 5-BFC gate is the young-creative protection). BFC metric = booking_confirmed (canonical,
 matches dashboard). NOTE: booking_fee_captured was used until 28 Jun and undercounted
-badly after the Rs 25 fee change on 4 Jun - do not use for historical comparisons.
+badly from ~23 Jun onwards - new app flow variants introduced around that date do not
+collect a booking fee, so fee-capture = 0 even when bookings happen. Do not use
+booking_fee_captured for any creative launched post 23 Jun.
 
 DAILY (07:00 IST):
 - Efficiency kill - CPBFC >= layer-multiplier x active median (L1/L2 = 1.0x, L3 = 1.2x
@@ -146,10 +148,11 @@ updated_time. Unacted KILLs surface in the next day's Slack post.
   Commit: c144f09 (logging) -> 4a104c7 (metric fix, see CH-10)
 
 CH-10 (28 Jun) - METRIC BUG FIXED: pass was using booking_fee_captured instead of
-booking_confirmed for CPBFC. Since the booking fee dropped to Rs 25 on Jun 4, fee-capture
-events severely undercount relative to confirmed bookings. Discovered via C-069: 5
-fee-captured vs 41 booking_confirmed -> CPBFC Rs 18,753 vs Rs 2,232. The morning pass on
-28 Jun incorrectly fired the cost-velocity brake on C-069 and an efficiency kill on C-039
+booking_confirmed for CPBFC. Root cause: app flow variants introduced ~23 Jun do not
+collect a booking fee, so fee-capture = 0 even when bookings confirm - all post-23 Jun
+creatives were effectively invisible to the pass. Discovered via C-069: 5 fee-captured
+vs 41 booking_confirmed -> CPBFC Rs 18,753 vs Rs 2,232. The morning pass on 28 Jun
+incorrectly fired the cost-velocity brake on C-069 and an efficiency kill on C-039
 (and may have caused unnecessary pauses). Fix: all CPBFC calculations now use
 booking_confirmed, matching the dashboard canonical metric.
   Commit: 4a104c7 on feat/kill-prune-v2.1.2
