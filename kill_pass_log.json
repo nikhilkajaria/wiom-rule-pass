@@ -1,0 +1,22 @@
+[
+  {
+    "date": "2026-06-26",
+    "median_cpbfc": 2404.55,
+    "recos": [
+      {
+        "concept_id": "JUN26-C-039",
+        "verdict": "KILL",
+        "reason": "efficiency (>= 1.0x median Rs2,405)",
+        "cpbfc": 2404.55,
+        "bfc": 11,
+        "spend": 26450.05,
+        "median_at_time": 2404.55,
+        "ad_ids": [
+          "120249029011420343"
+        ],
+        "action_taken": null,
+        "action_timing": null
+      }
+    ]
+  }
+]
