@@ -321,7 +321,26 @@ def compute(d1):
         rec['layer'] = layer_of(nm); rec['need'] = need_of(nm)
         if sp > 0 and (cid not in first or dt < first[cid]): first[cid] = dt
         if dt >= metric_start:
-            rec['w7s'] += sp; rec['w7i'] += ins
+            rec['w7s'] += sp; rec['w7i'] += ins; rec['w7b'] = rec.get('w7b', 0) + bf
+    # ---- funnel rows for non-Delhi geo diagnostic (7-day window) ----
+    funnel_geo = collections.defaultdict(lambda: {'inst': 0, 'svc_check': 0, 'svc_true': 0, 'bfc': 0, 'w7s': 0.0})
+    try:
+        frows = dget('/api/funnel_rows?' + urllib.parse.urlencode({'start': metric_start, 'end': d1.isoformat()}))
+        for r in frows:
+            aset = str(r.get('ad_set', '')); camp = str(r.get('campaign', ''))
+            g = geo_of(aset) or geo_of(camp)
+            if not g: continue
+            fg = funnel_geo[g]
+            fg['inst']      += r.get('app_installs') or 0
+            fg['svc_check'] += r.get('serviceable_check') or 0
+            fg['svc_true']  += r.get('serviceable_true') or 0
+            fg['bfc']       += r.get('booking_confirmed') or 0
+        # pull 7-day spend per non-Delhi geo from master_export (already iterated above via data)
+        for g, wc in data.items():
+            if g == 'Other': continue
+            funnel_geo[g]['w7s'] = sum(x['w7s'] for x in wc.values())
+    except Exception as e:
+        print(f'warn: funnel_rows fetch failed - {e}')
     age = {}
     for cid, ds in first.items():
         try: age[cid] = (d1 - datetime.date.fromisoformat(ds)).days
@@ -334,13 +353,13 @@ def compute(d1):
         paid = sum((d.get('meta_bfc') or 0) + (d.get('google_bfc') or 0) for d in days)
         if paid: cstar = BLENDED_TARGET * tot / paid
     except Exception: pass
-    return data, age, cstar
+    return data, age, cstar, dict(funnel_geo)
 
 
 def cpbfc(rec): return rec['spend'] / rec['bfc'] if rec['bfc'] else float('inf')
 
 
-def decide(data, age, cstar, active):
+def decide(data, age, cstar, active, funnel_geo=None):
     res = {'kills': [], 'reviews': [], 'isolates': [], 'prune_cut': [], 'pool_n': 0, 'continue': 0,
            'monitor': 0, 'median': None, 'brake_spend': None, 'geo_budget': [], 'geo_conv': [],
            'active_filter': active is not None}
@@ -394,22 +413,39 @@ def decide(data, age, cstar, active):
         for c in sorted(rest, key=lambda c: -score[c]):
             if len(keep) < POOL_CAP: keep.add(c)
         res['prune_cut'] = sorted([c for c in survivors if c not in keep], key=lambda c: pool[c]['w7s'])
-    # ---- weekly: geo budget (mature geo, lifetime cpbfc vs C*) + geo conversion ----
+    # ---- weekly: geo budget (mature geo, 7-day cpbfc vs C*) ----
     if cstar:
         for g in MATURE_GEOS:
             wc = data.get(g, {})
-            gsp = sum(x['spend'] for x in wc.values()); gbfc = sum(x['bfc'] for x in wc.values())
-            if gbfc >= GEO_BUDGET_BFC_GATE:
-                gcp = gsp / gbfc
-                res['geo_budget'].append((g, 'SCALE' if gcp <= cstar else 'HOLD', gcp, gbfc))
-    dW = data.get('Delhi', {})
-    del_inst = sum(x['inst'] for x in dW.values()); del_bfc = sum(x['bfc'] for x in dW.values())
-    del_book = (del_bfc / del_inst) if del_inst else None
-    for g, wc in data.items():
-        if g in MATURE_GEOS or g == 'Other': continue
-        ginst = sum(x['inst'] for x in wc.values()); gbfc = sum(x['bfc'] for x in wc.values()); gsp = sum(x['spend'] for x in wc.values())
-        if del_book and ginst >= GEO_CONV_INSTALLS and (gbfc / ginst if ginst else 0) <= (1 / GEO_CONV_MULT) * del_book:
-            res['geo_conv'].append((g, f"{ginst} installs, book {100*gbfc/ginst:.2f}% vs Delhi {100*del_book:.2f}%, spend Rs{gsp:,.0f} -> serviceability (CAP/CUT)", gsp))
+            gsp7 = sum(x['w7s'] for x in wc.values()); gbfc7 = sum(x.get('w7b', 0) for x in wc.values())
+            if gbfc7 >= GEO_BUDGET_BFC_GATE:
+                gcp = gsp7 / gbfc7
+                res['geo_budget'].append((g, 'SCALE' if gcp <= cstar else 'HOLD', gcp, gbfc7))
+    # ---- weekly: non-Delhi geo 3-stage diagnostic (7-day spend gate) ----
+    fg = funnel_geo or {}
+    del_fg = fg.get('Delhi', {}); del_w7s = sum(x['w7s'] for x in data.get('Delhi', {}).values())
+    del_svc_check = del_fg.get('svc_check', 0); del_svc_true = del_fg.get('svc_true', 0); del_bfc = del_fg.get('bfc', 0)
+    del_cpsc  = (del_w7s / del_svc_check) if del_svc_check else None
+    del_svc_rate  = (del_svc_true / del_svc_check) if del_svc_check else None
+    del_conv_rate = (del_bfc / del_svc_true) if del_svc_true else None
+    for g, gf in fg.items():
+        if g in MATURE_GEOS: continue
+        w7s = gf.get('w7s', 0)
+        if w7s <= 0: continue   # not active in last 7 days
+        svc_check = gf.get('svc_check', 0); svc_true = gf.get('svc_true', 0); bfc = gf.get('bfc', 0)
+        if svc_check < GEO_CONV_INSTALLS: continue
+        g_cpsc       = w7s / svc_check if svc_check else None
+        g_svc_rate   = svc_true / svc_check if svc_check else None
+        g_conv_rate  = bfc / svc_true if svc_true else None
+        flags = []
+        if del_cpsc and g_cpsc and g_cpsc > GEO_CONV_MULT * del_cpsc:
+            flags.append(f"cost/svc-check Rs{g_cpsc:,.0f} vs Delhi Rs{del_cpsc:,.0f} -> review campaign levers")
+        if del_svc_rate and g_svc_rate and g_svc_rate < (1 / GEO_CONV_MULT) * del_svc_rate:
+            flags.append(f"svc true% {100*g_svc_rate:.1f}% vs Delhi {100*del_svc_rate:.1f}% -> review targeting lever")
+        if del_conv_rate and g_conv_rate and g_conv_rate < (1 / GEO_CONV_MULT) * del_conv_rate:
+            flags.append(f"svc->booking {100*g_conv_rate:.1f}% vs Delhi {100*del_conv_rate:.1f}% -> review conversion levers")
+        if flags:
+            res['geo_conv'].append((g, flags, w7s))
     return res
 
 
@@ -472,19 +508,21 @@ def msg_weekly(res, cstar, start, end):
     integ = integrity_line(res)
     if not isos and not res['geo_budget'] and not res['geo_conv']:
         return f":memo: BFC-VOLUME weekly review ({start} to {end}): no isolate/geo actions.\n{integ}"
-    lines = [f":memo: *BFC-VOLUME weekly review* ({start} to {end}, DEL BOOKNOW, lifetime)",
+    lines = [f":memo: *BFC-VOLUME weekly review* ({start} to {end}, DEL BOOKNOW, 7-day)",
              "_Scale/isolate + structural geo layer. Daily handles kills/brake/prune._", integ, ""]
     if isos:
         lines.append(f"*ISOLATE candidates* (<=0.7x median, >=12 BFC -> own ad set) ({len(isos)})")
         for (c, lyr, need, lb, sp, x) in isos: lines.append(_row(c, lyr, need, lb, sp, x, "break into own ad set"))
         lines.append("")
     if res['geo_budget']:
-        lines.append(f"*Geo budget* (vs C* ~Rs{cstar:,.0f})" if cstar else "*Geo budget*")
+        lines.append(f"*Geo budget* (7d CPBFC vs C* ~Rs{cstar:,.0f})" if cstar else "*Geo budget*")
         for (g, a, cp, bf) in sorted(res['geo_budget']): lines.append(f"   - *{g}*: {a} - CPBFC Rs{cp:,.0f}, {int(bf)} BFC")
         lines.append("")
     if res['geo_conv']:
-        lines.append("*Geo conversion problems* (serviceability - CAP/CUT)")
-        for (g, detail, _s) in res['geo_conv']: lines.append(f"   - *{g}*: {detail}")
+        lines.append("*Geo diagnostic* (7d, vs Delhi benchmark)")
+        for (g, flags, _s) in res['geo_conv']:
+            lines.append(f"   *{g}*:")
+            for f in flags: lines.append(f"      - {f}")
         lines.append("")
     lines.append(ads_link())
     return "\n".join(lines)
@@ -527,9 +565,9 @@ def main():
         now_ist = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=5, minutes=30)
         d1 = (now_ist - datetime.timedelta(days=1)).date()
     start = (d1 - datetime.timedelta(days=WINDOW_DAYS - 1)).isoformat(); end = d1.isoformat()
-    data, age, cstar = compute(d1)
+    data, age, cstar, funnel_geo = compute(d1)
     active, ad_ids_map = meta_active_del()
-    res = decide(data, age, cstar, active)
+    res = decide(data, age, cstar, active, funnel_geo=funnel_geo)
 
     # Logging (skip in dry-run)
     unacted = []
