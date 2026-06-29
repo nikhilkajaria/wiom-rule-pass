@@ -31,7 +31,7 @@ platform - pause/scale stays a manual human step. "Kill fast, scale slow."
   - `python rule_pass.py --mode daily --dm-only`      (live test -> DM only)
   - `python rule_pass.py --mode daily --date 2026-06-22` (anchor D-1 to a day)
   - `--mode weekly` for the weekly pass.
-- Schedule (`.github/workflows/*.yml`, cron is UTC): `30 1 * * *` = 07:00 IST daily;
+- Schedule (`.github/workflows/*.yml`, cron is UTC): `0 6 * * *` = 11:30 IST daily;
   `30 1 * * 1` = Mon 07:00 IST weekly. Keep 30-60 min AFTER the ETL.
 - Slack: bot needs `chat:write`, `im:write`, and must be invited to #growth-reports
   (else channel post fails `not_in_channel`; DM copy needs no invite). Defaults:
