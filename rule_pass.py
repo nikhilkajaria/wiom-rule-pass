@@ -374,6 +374,7 @@ def decide(data, age, cstar, active, funnel_geo=None):
     brake_spend = max(BRAKE_CSTAR_MULT * cstar, BRAKE_SPEND_FLOOR) if cstar else BRAKE_SPEND_FLOOR
     res['brake_spend'] = brake_spend
     verdict = {}
+    eff_kill_candidates = []  # (c, lyr, need, lb, sp, x, reason, ratio) - capped below
     for c in spent:
         if not act(c): continue
         rec = pool[c]; lb = rec['bfc']; sp = rec['spend']; x = cpbfc(rec); lyr = rec['layer']
@@ -386,12 +387,32 @@ def decide(data, age, cstar, active, funnel_geo=None):
             verdict[c] = 'KILL_REVIEW'; res['reviews'].append((c, lyr, rec['need'], lb, sp, x, f'brake (>=2x line, spend Rs{sp:,.0f})')); continue
         if lb >= CREATIVE_BFC_GATE and kt:
             if x >= kt:
-                verdict[c] = 'KILL'; res['kills'].append((c, lyr, rec['need'], lb, sp, x, f'efficiency (>= {mult}x median Rs{med:,.0f})')); continue
+                eff_kill_candidates.append((c, lyr, rec['need'], lb, sp, x, f'efficiency (>= {mult}x median Rs{med:,.0f})', x / med))
+                continue
             if x <= ISOLATE_MULT * med and lb >= ISOLATE_BFC_GATE:
                 verdict[c] = 'ISOLATE'; res['isolates'].append((c, lyr, rec['need'], lb, sp, x)); continue
             verdict[c] = 'CONTINUE' if x < med else 'MONITOR'
         else:
             verdict[c] = 'MONITOR'
+    # v2.2.0: daily kill cap - rank by ratio (worst first), kill top DAILY_KILL_CAP, defer rest to MONITOR
+    eff_kill_candidates.sort(key=lambda t: -t[7])
+    res['deferred_kills'] = []
+    for i, (c, lyr, need, lb, sp, x, reason, _ratio) in enumerate(eff_kill_candidates):
+        if i < DAILY_KILL_CAP:
+            verdict[c] = 'KILL'
+            res['kills'].append((c, lyr, need, lb, sp, x, reason))
+        else:
+            verdict[c] = 'MONITOR'
+            res['deferred_kills'].append((c, lyr, need, lb, sp, x, reason))
+    # v2.2.0: top-spender warning - flag if KILL/KILL-REVIEW candidate is #1 or #2 by 7-day spend AND >10% pool share
+    pool_w7s = {c: pool[c]['w7s'] for c in spent if act(c)}
+    pool_total_w7s = sum(pool_w7s.values())
+    top2 = sorted(pool_w7s, key=lambda c: -pool_w7s[c])[:2]
+    kill_ids = {k[0] for k in res['kills']} | {r[0] for r in res['reviews']}
+    res['top_spender_warns'] = {
+        c for c in top2
+        if c in kill_ids and pool_total_w7s > 0 and pool_w7s[c] / pool_total_w7s > TOP_SPENDER_SHARE
+    }
     res['continue'] = sum(1 for v in verdict.values() if v == 'CONTINUE')
     res['monitor'] = sum(1 for v in verdict.values() if v == 'MONITOR')
     # ---- pool-cap prune (cap 15, layer x need-state coverage, no per-layer floor) ----
@@ -471,7 +492,7 @@ def integrity_line(res):
 def msg_daily(res, cstar, end, unacted=None):
     kills, reviews, cut = res['kills'], res['reviews'], res['prune_cut']
     integ = integrity_line(res)
-    if not kills and not reviews and not cut and not unacted:
+    if not kills and not reviews and not cut and not unacted and not res.get('deferred_kills'):
         return f":white_check_mark: *BFC-VOLUME daily kill+prune* ({end}, DEL BOOKNOW, lifetime): no kills, no brake, no prune. Pool {res['pool_n']}/{POOL_CAP}.\n{integ}"
     medlabel = "active-only median" if res['active_filter'] else "median (incl. paused)"
     if res['median']:
@@ -490,11 +511,26 @@ def msg_daily(res, cstar, end, unacted=None):
         lines.append("")
     if kills:
         lines.append(f"*KILL ({len(kills)})*")
-        for k in kills: lines.append(_row(*k))
+        warns = res.get('top_spender_warns', set())
+        for k in kills:
+            row = _row(*k)
+            if k[0] in warns:
+                row += "  :warning: *TOP SPENDER - scale replacement before pausing*"
+            lines.append(row)
+        lines.append("")
+    deferred = res.get('deferred_kills', [])
+    if deferred:
+        lines.append(f"*CAPPED - {len(deferred)} above threshold, deferred to MONITOR (daily cap {DAILY_KILL_CAP})*")
+        for k in deferred: lines.append(_row(*k))
         lines.append("")
     if reviews:
         lines.append(f"*KILL-REVIEW - cost-velocity brake ({len(reviews)})*  _human look, not auto_")
-        for r in reviews: lines.append(_row(*r))
+        warns = res.get('top_spender_warns', set())
+        for r in reviews:
+            row = _row(*r)
+            if r[0] in warns:
+                row += "  :warning: *TOP SPENDER - scale replacement before pausing*"
+            lines.append(row)
         lines.append("")
     if cut:
         lines.append(f"*PRUNE - pool over cap {POOL_CAP}, cut weakest ({len(cut)})*")
