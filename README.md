@@ -1,7 +1,7 @@
 # BFC-VOLUME kill + prune pass -> Slack
 
 Every morning after the ETL this reads the Growth Dashboard + Meta (both read-only), applies the
-BFC-VOLUME kill + prune rules per the **Operating Spec (post SD sign-off, 23 Jun 2026)**, and posts
+BFC-VOLUME kill + prune rules per the **Operating Spec v2.2.0 (post SD sign-off, 1 Jul 2026)**, and posts
 the day's decisions to **#growth-reports** (plus a DM copy) for one-click review in Ads Manager.
 
 **It never writes to any ad platform.** Pausing / scaling stays a manual, human step.
@@ -12,6 +12,8 @@ the day's decisions to **#growth-reports** (plus a DM copy) for one-click review
 - **Efficiency kill** - CPBFC >= layer-multiplier x median (L1/L2 = 1.0x, L3 = 1.2x held), >=5 lifetime BFC.
 - **Zero-BFC kill** - 0 BFC and >= Rs10,000 lifetime spend.
 - **Cost-velocity brake** - spend >= max(5xC*, Rs15,000) and CPBFC >= 2x kill line -> KILL-REVIEW (human look).
+- **Daily kill cap** - if efficiency-kill candidates > 3, rank by CPBFC/median ratio (worst first) and cap at 3 per day. Rest roll to MONITOR.
+- **Top-spender warning** - if a KILL candidate is #1 or #2 by 7-day daily avg spend AND holds >10% of pool avg spend, the Slack verdict gets a "TOP SPENDER - scale replacement before pausing" label. No gate, operator decides.
 - **Pool-cap prune** - if the active pool > 15, cut the weakest (protect layer x need-state coverage, then rank by delivery-velocity minus inefficiency). No per-layer floor.
 
 **Weekly** (`--mode weekly`, Mon 07:00 IST): ISOLATE candidates (<=0.7x median, >=12 BFC) + geo budget (SCALE/HOLD vs C*) + geo conversion (CAP/CUT).

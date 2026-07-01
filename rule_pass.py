@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""BFC-VOLUME kill + prune pass -> Slack. Aligned to the Operating Spec (post SD sign-off, 23 Jun).
+"""BFC-VOLUME kill + prune pass -> Slack. Operating Spec v2.2.0 (post SD sign-off, 1 Jul 2026).
 
   DAILY (post-ETL): efficiency kill + zero-BFC kill + cost-velocity brake (KILL-REVIEW) + pool-cap
         prune cut-list. Lifetime CPBFC (booking_confirmed), lifetime 5-BFC gate, NO calendar grace,
@@ -22,12 +22,14 @@ import sys, io, os, json, re, argparse, datetime, statistics, urllib.request, ur
 import collections, subprocess
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
-# ---- spec constants (post SD sign-off) ----
+# ---- spec constants (v2.2.0, SD sign-off 1 Jul 2026) ----
 CAMPAIGN_START    = '2026-06-01'
 WINDOW_DAYS       = 7              # only for prune delivery-velocity + geo/weekly views
 CREATIVE_BFC_GATE = 5             # LIFETIME bfc to be efficiency-killable
 ZERO_BFC_SPEND    = 10000         # Rs lifetime spend, 0 bfc -> kill
 KILL_MULT         = {'L1': 1.0, 'L2': 1.0, 'L3': 1.2, 'untagged': 1.0}
+DAILY_KILL_CAP    = 3             # v2.2.0: if efficiency-kill candidates > 3, rank by ratio worst-first, cap at 3
+TOP_SPENDER_SHARE = 0.10          # v2.2.0: warn (not block) if kill candidate holds >10% of pool daily avg spend
 L3_FLIP           = False         # Discovery box not operational -> L3 holds 1.2x (auto-flip to 1.0 later)
 BLENDED_TARGET    = 500           # Rs; C* = BLENDED_TARGET * totalBFC / paidBFC
 BRAKE_SPEND_FLOOR = 15000         # Rs

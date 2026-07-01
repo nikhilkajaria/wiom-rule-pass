@@ -44,7 +44,7 @@ platform - pause/scale stays a manual human step. "Kill fast, scale slow."
 
 ---
 
-## 2. The framework AS RATIFIED (v2.1.2, post SD sign-off 23 Jun 2026)
+## 2. The framework AS RATIFIED (v2.2.0, post SD sign-off 1 Jul 2026)
 
 Basis for the daily pass: mature geo = Delhi, BOOKNOW-only, LIFETIME basis, active-only
 median (Meta `effective_status` filter), first-spend anchored, no calendar grace (the
@@ -62,10 +62,22 @@ DAILY (07:00 IST):
   line -> KILL-REVIEW (human look), regardless of BFC count. (This is the "Rs 40K hole"
   catch - stops a creative that collected 1-4 bookings at a terrible CPBL from running
   uncapped because it isn't yet efficiency-kill-eligible.)
+- Daily kill cap 3 - if efficiency-kill candidates exceed 3 in a single run, rank by
+  CPBFC ratio (worst-to-median ratio, highest first) and cap at 3 kills per day. Remaining
+  candidates roll to MONITOR and are re-evaluated the next day. Prevents batch-kill pool
+  crashes (the Jun 22-23 event: 12 kills over 2 days collapsed the pool from 24 to 13 and
+  drove a -47% spend trough). Empirical basis: all events with <= 4 kills were
+  neutral-to-positive on spend; both 6-kill events dropped spend ~27%.
 - Pool-cap prune - if active pool > 15: cut the weakest. Order: (1) drop anything already
   KILL/REPLACE, (2) keep CONTINUE + ISOLATE candidates, (3) from the rest protect
   coverage on AUDIENCE LAYER x NEED-STATE (NOT format), then rank by delivery-velocity
   minus inefficiency, cut to 15. NO per-layer survivor floor.
+- Top-spender warning - PROTECTED gate dropped (data showed no spend-share exemption is
+  justified: C-069 at 45% pool share killed -> +4% next day; T-050 at 25% killed ->
+  +43%). Replaced with a warning label in the Slack output: if a KILL candidate ranks #1
+  or #2 by 7-day daily avg spend AND holds > 10% of pool daily avg spend, the verdict
+  posts with a "TOP SPENDER - scale replacement before pausing" flag. Operator still
+  decides; the pass does not block the action.
 
 WEEKLY (Mon 07:00 IST):
 - ISOLATE candidates - <= 0.7x median CPBL AND >= 12 BFC (recharge passes) -> own ad set /
@@ -156,6 +168,26 @@ incorrectly fired the cost-velocity brake on C-069 and an efficiency kill on C-0
 (and may have caused unnecessary pauses). Fix: all CPBFC calculations now use
 booking_confirmed, matching the dashboard canonical metric.
   Commit: 4a104c7 on feat/kill-prune-v2.1.2
+
+CH-11 (1 Jul) - SD SIGN-OFF on two framework changes (v2.1.2 -> v2.2.0). Empirical
+basis: retrospective analysis of DEL BFC-VOLUME kill history (Jun 8-29, 10 kill events,
+22 days of spend data).
+  (a) DAILY KILL CAP 3: add a flat cap of 3 kills per daily pass. When candidates exceed
+      3, rank by CPBFC/median ratio (worst first) and defer the rest to MONITOR. The
+      Jun 22-23 spend crash (-47%) was caused by 12 kills in 2 days (not by any individual
+      kill). A cap of 3 would have kept the pool at 18 instead of 13. Data: all events
+      with <= 4 kills were neutral-to-positive; both 6-kill events dropped spend ~27%.
+  (b) DROP PROTECTED, ADD TOP-SPENDER WARNING: the PROTECTED (FIND REPLACEMENT) gate for
+      top-spenders was proposed but rejected by empirical data. C-069 at 45% pool share
+      killed -> +4%; T-050 at 25% killed -> +43%. The cascade was caused by batch-kill
+      volume (CH-9), not by killing any individual dominant creative. PROTECTED is replaced
+      with a soft warning label in the Slack output (no gate) so the operator can review
+      before executing. The pass does not block the kill.
+  Trade-off accepted: slower cleanup when a seeding batch fails (2-3 days instead of 1
+  to clear bad creatives). Principle locked: volume is the objective, efficiency is the
+  guardrail. The kill pass removes creatives that breach cost threshold - not compress
+  the pool toward some minimum.
+  Slack: #growth-reports (C0B9G0Q68G6) thread 1782712450.281269, SD reply 2026-07-01.
 
 ---
 
