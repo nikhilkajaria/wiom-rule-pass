@@ -52,9 +52,10 @@ META_ACC_DEFAULT      = '2007675312900454'
 META_VER_DEFAULT      = 'v23.0'
 
 # ---- logging constants ----
-LOG_PATH   = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'kill_pass_log.json')
-SHEET_ID   = '145hcZtsX_W-ibI5SrW9tksVO0J-Tka9NtuIaIpZglqA'
-SHEET_TAB  = 'Recos'
+LOG_PATH        = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'kill_pass_log.json')
+ACTION_LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'kill_action_log.csv')
+SHEET_ID        = '145hcZtsX_W-ibI5SrW9tksVO0J-Tka9NtuIaIpZglqA'
+SHEET_TAB       = 'Recos'
 
 
 def load_env():
@@ -213,6 +214,8 @@ def write_log_entry(log, res, d1, ad_ids_map, median):
     for (c, lyr, need, lb, sp, x, reason) in res['kills']:
         recos.append({
             'concept_id': c,
+            'layer': lyr,
+            'need': need,
             'verdict': 'KILL',
             'reason': reason,
             'cpbfc': round(x, 2) if x != float('inf') else None,
@@ -285,11 +288,50 @@ def sheet_sync(log, d1):
         print(f'warn: Sheet sync failed - {e}')
 
 
+def write_action_log_csv(log, d1):
+    """Append yesterday's back-filled KILL recos to kill_action_log.csv."""
+    import csv
+    yesterday = (d1 - datetime.timedelta(days=1)).isoformat()
+    rows = []
+    for entry in log:
+        if entry['date'] != yesterday: continue
+        for reco in entry.get('recos', []):
+            if reco.get('verdict') != 'KILL': continue
+            if reco.get('action_taken') is None: continue  # retro check didn't run / Meta unavailable
+            rows.append([
+                entry['date'],
+                reco.get('concept_id', ''),
+                reco.get('layer', ''),
+                reco.get('need', ''),
+                reco.get('bfc', ''),
+                reco.get('spend', ''),
+                reco.get('cpbfc', ''),
+                reco.get('median_at_time', ''),
+                reco.get('reason', ''),
+                '|'.join(reco.get('ad_ids', [])),
+                reco.get('action_taken', ''),
+                reco.get('action_timing', ''),
+            ])
+    if not rows: return
+    try:
+        write_header = not os.path.exists(ACTION_LOG_PATH) or os.path.getsize(ACTION_LOG_PATH) == 0
+        with open(ACTION_LOG_PATH, 'a', newline='', encoding='utf-8') as f:
+            w = csv.writer(f)
+            if write_header:
+                w.writerow(['reco_date', 'concept_id', 'layer', 'need_state', 'bfc', 'spend',
+                            'cpbfc', 'median_at_time', 'reason', 'ad_ids',
+                            'action_taken', 'action_timing'])
+            w.writerows(rows)
+        print(f'action log: wrote {len(rows)} row(s) for {yesterday}')
+    except Exception as e:
+        print(f'warn: could not write action log - {e}')
+
+
 def git_commit_log(d1):
     """Commit the updated log JSON back to the repo."""
     try:
         repo = os.path.dirname(os.path.abspath(__file__))
-        subprocess.run(['git', 'add', LOG_PATH], cwd=repo, check=True, capture_output=True)
+        subprocess.run(['git', 'add', LOG_PATH, ACTION_LOG_PATH], cwd=repo, check=True, capture_output=True)
         result = subprocess.run(
             ['git', 'commit', '-m', f'kill-pass log {d1.isoformat()}'],
             cwd=repo, capture_output=True
@@ -612,6 +654,7 @@ def main():
     if args.mode == 'daily' and not args.dry_run:
         log = load_log()
         unacted = retro_check(log, d1)
+        write_action_log_csv(log, d1)
         log = write_log_entry(log, res, d1, ad_ids_map, res['median'])
         save_log(log)
         sheet_sync(log, d1)

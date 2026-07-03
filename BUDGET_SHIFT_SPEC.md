@@ -99,12 +99,12 @@ Check all three metrics daily. A flag requires the metric to be breaching **both
 
 **Initiating a shift:**
 1. Compute `shift_Rs` using the formula above
-2. Record: date, trigger gap%, shift_Rs, source channel, destination channel, step number
-3. Get approval (SD or channel owner)
+2. Append a row to `budget_shift_log.csv`: date, trigger gap%, shift_Rs, source, destination, step N of M
+3. Get approval (Nikhil)
 4. Execute manually: adjust daily budget in Meta Ads Manager and Google Ads console
-5. Note the execution time - budget changes take effect from the next delivery window
+5. Fill in execution_confirmed and execution_time in the log row
 
-**During the shift (every 3 days at each step):**
+**During the shift (at each 3-day step):**
 1. Re-pull 7-day rolling CPBL per channel
 2. If gap < 10%: stop, do not execute next step, enter stabilization
 3. If gap >= 10% and no monitoring flags: execute next step
@@ -115,8 +115,8 @@ Check all three metrics daily. A flag requires the metric to be breaching **both
 2. At day 7: pull CPBL per channel, assess whether gap has closed, document outcome
 3. If gap persists after stabilization: re-evaluate trigger conditions
 
-**Log to keep** (simple spreadsheet or appended to kill_pass_log):
-- Date, trigger gap%, shift_Rs, source, destination, step N of M, execution confirmed (Y/N), monitoring flags (if any), outcome note
+**Log:** `budget_shift_log.csv` in this repo. One row per step. Fields:
+- date, trigger_gap_pct, shift_rs, source_channel, destination_channel, step_n, total_steps, execution_confirmed, execution_time, monitoring_flags, outcome_note
 
 ---
 
