@@ -26,7 +26,7 @@ jobs:
           pip install google-ads google-auth requests python-dotenv
 
       - name: Run budget shift pass
-        run: python budget_shift_pass.py
+        run: python budget_shift_pass.py --dm-only
         env:
           WIOM_DASHBOARD_TOKEN: ${{ secrets.WIOM_DASHBOARD_TOKEN }}
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}

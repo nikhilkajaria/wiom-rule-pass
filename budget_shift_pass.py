@@ -203,12 +203,29 @@ def check_trigger(war_room, d1):
     return fires, gap_today, consecutive, meta_cpbl_today, google_cpbl_today
 
 
-def compute_shift(gap, meta_total_budget, google_total_budget):
+def compute_shift(gap, meta_total_budget, google_total_budget,
+                  from_adset_budget=None, to_camp_budget=None):
+    """
+    shift_Rs = min(min(gap/2, 15%) x meta_total, 15% x google_total)
+    ALSO capped at 15% of the specific ad set / campaign being changed,
+    since that's the unit that risks re-entering learning phase.
+    """
     step_pct = min(gap / 2, MAX_STEP_PCT)
-    term1 = step_pct * meta_total_budget
-    term2 = MAX_STEP_PCT * google_total_budget
-    shift_rs = min(term1, term2)
-    binding = 'Google' if term2 < term1 else 'Meta'
+    term_meta_ch   = step_pct * meta_total_budget
+    term_google_ch = MAX_STEP_PCT * google_total_budget
+    shift_rs = min(term_meta_ch, term_google_ch)
+    binding = 'Google channel' if term_google_ch < term_meta_ch else 'Meta channel'
+
+    if from_adset_budget:
+        adset_cap = MAX_STEP_PCT * from_adset_budget
+        if adset_cap < shift_rs:
+            shift_rs = adset_cap
+            binding = 'Meta ad set'
+    if to_camp_budget:
+        camp_cap = MAX_STEP_PCT * to_camp_budget
+        if camp_cap < shift_rs:
+            shift_rs = camp_cap
+            binding = 'Google campaign'
     return shift_rs, binding
 
 
@@ -302,33 +319,65 @@ def check_monitoring(war_room, d1):
 def fmt_rs(v): return f'Rs {v:,.0f}'
 
 
+def _estimate_steps(gap):
+    """Rough estimate: each step closes ~12pp of the gap via budget reallocation."""
+    if gap >= 0.30: return 4
+    if gap >= 0.20: return 3
+    if gap >= 0.10: return 2
+    return 1
+
+
 def msg_trigger(gap, consecutive, meta_cpbl, google_cpbl,
                 shift_rs, binding,
                 meta_target, meta_budget, meta_new,
                 google_target, google_budget, google_new,
-                step_n=1):
+                step_n=1, anchor_date=None):
+    today = anchor_date or datetime.date.today()
+    est_steps = _estimate_steps(gap)
+    meta_pct = (meta_new - meta_budget) / meta_budget * 100
+    google_pct = (google_new - google_budget) / google_budget * 100
+
+    # Build projected step sequence
+    step_lines = []
+    for s in range(1, est_steps + 1):
+        step_date = today + datetime.timedelta(days=(s - step_n) * STEP_CADENCE_DAYS)
+        if s == step_n:
+            step_lines.append(
+                f'  *Step {s} ({step_date.strftime("%b %d")} - execute now):*  '
+                f'{fmt_rs(meta_budget)} -> {fmt_rs(meta_new)} Meta  |  '
+                f'{fmt_rs(google_budget)} -> {fmt_rs(google_new)} Google  '
+                f'({meta_pct:+.1f}% / {google_pct:+.1f}%)'
+            )
+        else:
+            step_lines.append(
+                f'  Step {s} ({step_date.strftime("%b %d")} - re-evaluate):  '
+                f'~{fmt_rs(shift_rs)}/day more if gap still >10%'
+            )
+    stab_start = today + datetime.timedelta(days=(est_steps - step_n + 1) * STEP_CADENCE_DAYS)
+    stab_end   = stab_start + datetime.timedelta(days=STABILIZATION_DAYS)
+    step_lines.append(
+        f'  Stabilization ({stab_start.strftime("%b %d")} - {stab_end.strftime("%b %d")}):  7-day read, no new shifts'
+    )
+
     lines = [
-        f':arrows_counterclockwise: *Budget Shift Pass* - *TRIGGER FIRES* (Step {step_n})',
+        f':arrows_counterclockwise: *Budget Shift Pass* - *TRIGGER FIRES*',
         '',
         f'*Channel CPBL (7-day rolling, Branch-attributed):*',
-        f'  Meta:   {fmt_rs(meta_cpbl)} | Google: {fmt_rs(google_cpbl)}',
+        f'  Meta: {fmt_rs(meta_cpbl)}  |  Google: {fmt_rs(google_cpbl)}',
         f'  Gap: {gap*100:.1f}%  >10% for {consecutive} consecutive days',
         '',
-        f'*Recommended shift: {fmt_rs(shift_rs)}/day  Meta -> Google*  [{binding} side binding at 15%]',
+        f'*Projected shift series  ({est_steps} steps x {fmt_rs(shift_rs)}/day, every 3 days):*',
+    ] + step_lines + [
         '',
-        '*Where to reduce (Meta):*',
-        f'  `{meta_target}`',
-        f'  {fmt_rs(meta_budget)}/day  ->  {fmt_rs(meta_new)}/day  ({(meta_new-meta_budget)/meta_budget*100:+.1f}%)',
-        '',
-        '*Where to add (Google):*',
-        f'  `{google_target}`',
-        f'  {fmt_rs(google_budget)}/day  ->  {fmt_rs(google_new)}/day  ({(google_new-google_budget)/google_budget*100:+.1f}%)',
+        f'*Step {step_n} — where to move the money:*',
+        f'  Reduce:  `{meta_target}`  {fmt_rs(meta_budget)}/day -> {fmt_rs(meta_new)}/day  ({meta_pct:+.1f}%)',
+        f'  Add to:  `{google_target}`  {fmt_rs(google_budget)}/day -> {fmt_rs(google_new)}/day  ({google_pct:+.1f}%)',
+        f'  _{binding} side binding at 15% per-unit cap_',
         '',
         '_All changes are manual. Adjust budgets in Meta Ads Manager and Google Ads console._',
-        f'_Next re-check: {(datetime.date.today() + datetime.timedelta(days=STEP_CADENCE_DAYS)).isoformat()}_',
         '',
-        ':warning: _Incrementality caveat: 40%+ sustained gap may reflect attribution bleed '
-        '(Meta drives demand, Google captures). Validate before executing (geo holdout pending)._',
+        ':warning: _Incrementality caveat: sustained 40%+ gap may reflect attribution bleed '
+        '(Meta drives demand, Google captures). Validate before committing to the full series (geo holdout pending)._',
     ]
     return '\n'.join(lines)
 
@@ -477,14 +526,16 @@ def main():
                 # Don't advance step; hold for human review
             else:
                 # Fire next step
-                meta_budgets  = get_meta_budgets()
+                meta_budgets   = get_meta_budgets()
                 google_budgets = get_google_budgets()
-                meta_total  = sum(d['daily_budget'] for d in meta_budgets.values() if d['type'] != 'RETARGETING')
+                meta_total   = sum(d['daily_budget'] for d in meta_budgets.values() if d['type'] != 'RETARGETING')
                 google_total = sum(d['daily_budget'] for d in google_budgets.values())
                 cpbl_data = get_campaign_cpbl(d1)
-                shift_rs, binding = compute_shift(gap, meta_total, google_total)
                 meta_target, meta_budget, google_target, google_budget = pick_distribution(
-                    shift_rs, meta_budgets, google_budgets, cpbl_data)
+                    None, meta_budgets, google_budgets, cpbl_data)
+                shift_rs, binding = compute_shift(gap, meta_total, google_total,
+                                                  from_adset_budget=meta_budget,
+                                                  to_camp_budget=google_budget)
                 meta_new   = meta_budget   - shift_rs
                 google_new = google_budget + shift_rs
                 next_step_n = step_n + 1
@@ -499,7 +550,7 @@ def main():
                                   shift_rs, binding,
                                   meta_target, meta_budget, meta_new,
                                   google_target, google_budget, google_new,
-                                  step_n=next_step_n)
+                                  step_n=next_step_n, anchor_date=d1)
         else:
             # Between steps: monitoring only
             msg = msg_monitoring(step_n, flags, gap or 0, next_step.isoformat())
@@ -509,12 +560,14 @@ def main():
         if fires and gap is not None:
             meta_budgets   = get_meta_budgets()
             google_budgets = get_google_budgets()
-            meta_total  = sum(d['daily_budget'] for d in meta_budgets.values() if d['type'] != 'RETARGETING')
+            meta_total   = sum(d['daily_budget'] for d in meta_budgets.values() if d['type'] != 'RETARGETING')
             google_total = sum(d['daily_budget'] for d in google_budgets.values())
             cpbl_data = get_campaign_cpbl(d1)
-            shift_rs, binding = compute_shift(gap, meta_total, google_total)
             meta_target, meta_budget, google_target, google_budget = pick_distribution(
-                shift_rs, meta_budgets, google_budgets, cpbl_data)
+                None, meta_budgets, google_budgets, cpbl_data)
+            shift_rs, binding = compute_shift(gap, meta_total, google_total,
+                                              from_adset_budget=meta_budget,
+                                              to_camp_budget=google_budget)
             meta_new   = meta_budget   - shift_rs
             google_new = google_budget + shift_rs
             next_step_date = (d1 + datetime.timedelta(days=STEP_CADENCE_DAYS)).isoformat()
@@ -541,7 +594,7 @@ def main():
                               shift_rs, binding,
                               meta_target, meta_budget, meta_new,
                               google_target, google_budget, google_new,
-                              step_n=1)
+                              step_n=1, anchor_date=d1)
         else:
             msg = msg_clean(gap or 0, consecutive)
 
