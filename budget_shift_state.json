@@ -1,16 +1,5 @@
 {
-  "phase": "shift",
-  "shift": {
-    "initiated_date": "2026-07-04",
-    "step": 1,
-    "shift_rs": 7050,
-    "source_channel": "meta",
-    "dest_channel": "google",
-    "meta_adset": "DEL_ALL_PBFC_L1-L2-L3_BROAD_MULTI_APPSTORE_ABO_BFC-VOLUME_MULTI_NA",
-    "google_campaign": "GOOGLE_BA_DEL_SCALE_ABO_UAC_BFC-VOLUME_010626",
-    "trigger_gap_pct": 43.0,
-    "last_step_date": "2026-07-04",
-    "next_step_date": "2026-07-07"
-  },
-  "stabilization_end": null
+  "phase": "stabilization",
+  "shift": null,
+  "stabilization_end": "2026-07-14"
 }
