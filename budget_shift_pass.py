@@ -508,11 +508,11 @@ def slack_api(method, token, payload):
 
 def slack_upload_png(png_bytes, filename, channel_id, initial_comment, token):
     """Upload PNG via Slack Files v2 API and share to channel_id."""
-    # 1. get upload URL
-    payload1 = json.dumps({'filename': filename, 'length': len(png_bytes)}).encode()
+    # 1. get upload URL — form-encoded (not JSON)
+    form1 = urllib.parse.urlencode({'filename': filename, 'length': str(len(png_bytes))}).encode()
     req1 = urllib.request.Request(
-        'https://slack.com/api/files.getUploadURLExternal', data=payload1,
-        headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'})
+        'https://slack.com/api/files.getUploadURLExternal', data=form1,
+        headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/x-www-form-urlencoded'})
     with urllib.request.urlopen(req1, timeout=30) as r:
         resp1 = json.loads(r.read())
     if not resp1.get('ok'):
@@ -520,11 +520,29 @@ def slack_upload_png(png_bytes, filename, channel_id, initial_comment, token):
     upload_url = resp1['upload_url']
     file_id    = resp1['file_id']
 
-    # 2. PUT bytes to upload URL
-    req2 = urllib.request.Request(upload_url, data=png_bytes, method='PUT',
-        headers={'Content-Type': 'image/png'})
-    with urllib.request.urlopen(req2, timeout=60):
-        pass
+    # 2. PUT bytes to upload URL — use requests if available, else urllib with redirect loop
+    try:
+        import requests as _req
+        r2 = _req.put(upload_url, data=png_bytes, headers={'Content-Type': 'image/png'}, timeout=60)
+        if r2.status_code not in (200, 204):
+            raise RuntimeError(f'PUT upload failed: HTTP {r2.status_code} {r2.text[:200]}')
+    except ImportError:
+        import http.client, urllib.parse as _up
+        url = upload_url
+        for _ in range(5):
+            p = _up.urlparse(url)
+            conn = http.client.HTTPSConnection(p.netloc, timeout=60)
+            path = p.path + (f'?{p.query}' if p.query else '')
+            conn.request('PUT', path, body=png_bytes, headers={'Content-Type': 'image/png'})
+            rr = conn.getresponse()
+            if rr.status in (301, 302, 307, 308):
+                url = rr.getheader('Location')
+                rr.read()
+                continue
+            if rr.status not in (200, 204):
+                raise RuntimeError(f'PUT upload failed: HTTP {rr.status}')
+            rr.read()
+            break
 
     # 3. complete: share to channel with initial_comment as the text
     payload3 = json.dumps({
