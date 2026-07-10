@@ -472,7 +472,7 @@ def generate_cpbl_chart(war_room, d1):
             ax.annotate(f'Gap {gap_pct:.0f}%', xy=(dates[-1], (meta_vals[-1] + goog_vals[-1]) / 2),
                         xytext=(6, 0), textcoords='offset points', fontsize=8, color='#555555')
 
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%-d %b'))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%d %b'))
         ax.xaxis.set_major_locator(mdates.DayLocator())
         plt.xticks(rotation=25, ha='right', fontsize=9)
         ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'Rs {x:,.0f}'))
