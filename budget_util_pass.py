@@ -52,17 +52,15 @@ TOP_CONTRIB_N   = 5
 
 def get_meta_window(d1, lookback=LOOKBACK_DAYS):
     """
-    Returns (today_by_adset, hist, today_detail).
-      today_by_adset[ad_set]                    -> spend on d1 (for the flag check)
-      hist[ad_set][creative][date_iso]           -> spend (for baseline/contributor calc)
-      today_detail[(ad_set, creative)]           -> {impressions, ctr_pct, hook_rate_pct, hold_rate_pct} on d1
+    Returns (today_by_adset, hist).
+      today_by_adset[ad_set]              -> spend on d1 (for the flag check)
+      hist[ad_set][creative][date_iso]    -> spend (for baseline/contributor calc)
     """
     start = (d1 - datetime.timedelta(days=lookback)).isoformat()
     rows = dget('/api/master_export?' + f'start={start}&end={d1.isoformat()}')
     today_iso = d1.isoformat()
     today_by_adset = collections.defaultdict(float)
     hist = collections.defaultdict(lambda: collections.defaultdict(lambda: collections.defaultdict(float)))
-    today_detail = {}
     for r in rows:
         if r.get('channel') != 'META': continue
         aset = r.get('ad_set')
@@ -72,17 +70,11 @@ def get_meta_window(d1, lookback=LOOKBACK_DAYS):
         hist[aset][creative][date] += sp
         if date == today_iso:
             today_by_adset[aset] += sp
-            today_detail[(aset, creative)] = {
-                'impressions': r.get('impressions') or 0,
-                'ctr_pct': r.get('ctr_pct'),
-                'hook_rate_pct': r.get('hook_rate_pct'),
-                'hold_rate_pct': r.get('hold_rate_pct'),
-            }
-    return today_by_adset, hist, today_detail
+    return today_by_adset, hist
 
 
-def meta_creative_contributors(ad_set_hist, today_detail, ad_set, d1, direction, n=TOP_CONTRIB_N):
-    """direction: 'OVER' or 'UNDER'. Ranks creatives by delta = today - trailing_avg,
+def meta_creative_contributors(ad_set_hist, d1, direction, n=TOP_CONTRIB_N):
+    """direction: 'OVER' or 'UNDER'. Ranks creatives by delta = spend_on_d1 - trailing_avg,
     in the direction matching the flag (grew for OVER, dropped for UNDER)."""
     today_iso = d1.isoformat()
     rows = []
@@ -98,7 +90,6 @@ def meta_creative_contributors(ad_set_hist, today_detail, ad_set, d1, direction,
         rows.append({
             'creative': creative, 'today': today, 'baseline_avg': baseline_avg,
             'delta': delta, 'baseline_days': len(baseline_vals),
-            **today_detail.get((ad_set, creative), {}),
         })
     total_delta = total_today - total_baseline
     if direction == 'OVER':
@@ -129,30 +120,24 @@ def get_google_network_window(campaign_name, d1, lookback=LOOKBACK_DAYS):
         safe_name = campaign_name.replace("'", "\\'")
         start = (d1 - datetime.timedelta(days=lookback)).isoformat()
         query = f'''
-          SELECT segments.ad_network_type, segments.date, metrics.cost_micros,
-                 metrics.impressions, metrics.clicks
+          SELECT segments.ad_network_type, segments.date, metrics.cost_micros
           FROM campaign
           WHERE campaign.name = '{safe_name}'
             AND segments.date BETWEEN '{start}' AND '{d1.isoformat()}'
         '''
         hist = collections.defaultdict(lambda: collections.defaultdict(float))
-        today_detail = collections.defaultdict(lambda: {'impressions': 0, 'clicks': 0})
-        today_iso = d1.isoformat()
         for row in ga.search(customer_id=cid, query=query):
             net = row.segments.ad_network_type.name
             date = row.segments.date
             sp = row.metrics.cost_micros / 1_000_000
             hist[net][date] += sp
-            if date == today_iso:
-                today_detail[net]['impressions'] += row.metrics.impressions
-                today_detail[net]['clicks']      += row.metrics.clicks
-        return dict(hist), dict(today_detail)
+        return dict(hist)
     except Exception as e:
         print(f'warn: google network window failed for {campaign_name} - {e}')
-        return {}, {}
+        return {}
 
 
-def google_network_contributors(hist, today_detail, d1, direction, n=TOP_CONTRIB_N):
+def google_network_contributors(hist, d1, direction, n=TOP_CONTRIB_N):
     today_iso = d1.isoformat()
     rows = []
     total_today = 0.0
@@ -167,7 +152,6 @@ def google_network_contributors(hist, today_detail, d1, direction, n=TOP_CONTRIB
         rows.append({
             'network': net, 'today': today, 'baseline_avg': baseline_avg,
             'delta': delta, 'baseline_days': len(baseline_vals),
-            **today_detail.get(net, {'impressions': 0, 'clicks': 0}),
         })
     total_delta = total_today - total_baseline
     if direction == 'OVER':
@@ -183,7 +167,6 @@ def google_network_contributors(hist, today_detail, d1, direction, n=TOP_CONTRIB
 
 def fmt_rs(v): return f'Rs {v:,.0f}'
 def fmt_rs_signed(v): return f'+{fmt_rs(v)}' if v >= 0 else f'-{fmt_rs(abs(v))}'
-def fmt_pct(v): return f'{v:.1f}%' if v is not None else 'n/a'
 
 
 def format_meta_flag(name, budget, spend, util):
@@ -202,7 +185,8 @@ def format_google_flag(name, budget, spend, util):
     ]
 
 
-def format_contrib_header(total_delta, explained, top_n_found, today_total=0.0):
+def format_contrib_header(total_delta, explained, top_n_found, d1, today_total=0.0):
+    day_label = d1.strftime('%b %d')
     if not top_n_found:
         return [f'      _no creative/network moved in this direction vs its trailing {LOOKBACK_DAYS}-day avg - '
                 f'deviation may be a recent budget change or account-level factor, not creative-driven_']
@@ -216,31 +200,31 @@ def format_contrib_header(total_delta, explained, top_n_found, today_total=0.0):
     sign_mismatch = total_delta != 0 and ((total_delta > 0) != (explained > 0))
     if flat or sign_mismatch:
         return [f'      _ad-set/campaign-level spend is roughly flat vs its trailing {LOOKBACK_DAYS}-day avg '
-                f'(net {fmt_rs_signed(total_delta)}) - today\'s over/under-budget status looks like an ongoing '
-                f'pattern, not a fresh swing. Individual movers in that window:_']
+                f'(net {fmt_rs_signed(total_delta)}) - {day_label}\'s over/under-budget status looks like an '
+                f'ongoing pattern, not a fresh swing. Individual movers in that window:_']
     pct = explained / total_delta * 100
     return [f'      _top contributors to the {fmt_rs_signed(total_delta)} move vs trailing {LOOKBACK_DAYS}-day avg '
             f'(these explain ~{pct:.0f}% of it):_']
 
 
-def format_creative_contributors(top):
+def format_creative_contributors(top, d1):
+    day_label = d1.strftime('%b %d')
     lines = []
     for c in top:
         lines.append(
             f'      - `{c["creative"][:42]}`  {fmt_rs_signed(c["delta"])}  '
-            f'(today {fmt_rs(c["today"])} vs avg {fmt_rs(c["baseline_avg"])})  |  '
-            f'CTR {fmt_pct(c.get("ctr_pct"))}  |  hook {fmt_pct(c.get("hook_rate_pct"))}  |  hold {fmt_pct(c.get("hold_rate_pct"))}'
+            f'({day_label}: {fmt_rs(c["today"])} vs avg {fmt_rs(c["baseline_avg"])})'
         )
     return lines
 
 
-def format_network_contributors(top):
+def format_network_contributors(top, d1):
+    day_label = d1.strftime('%b %d')
     lines = []
     for r in top:
         lines.append(
             f'      - {r["network"]:<16s}  {fmt_rs_signed(r["delta"])}  '
-            f'(today {fmt_rs(r["today"])} vs avg {fmt_rs(r["baseline_avg"])})  |  '
-            f'imp {r.get("impressions", 0):,}  |  clk {r.get("clicks", 0):,}'
+            f'({day_label}: {fmt_rs(r["today"])} vs avg {fmt_rs(r["baseline_avg"])})'
         )
     return lines
 
@@ -278,7 +262,7 @@ def main():
 
     meta_budgets   = get_meta_budgets()
     google_budgets = get_google_budgets()
-    meta_today_by_adset, meta_hist, meta_today_detail = get_meta_window(d1)
+    meta_today_by_adset, meta_hist = get_meta_window(d1)
 
     meta_flags   = []
     for name, d in meta_budgets.items():
@@ -317,17 +301,17 @@ def main():
             direction = 'UNDER' if util < 1.0 else 'OVER'
             lines += format_meta_flag(name, budget, spend, util)
             top, total_delta, explained = meta_creative_contributors(
-                meta_hist.get(name, {}), meta_today_detail, name, d1, direction)
-            lines += format_contrib_header(total_delta, explained, bool(top), today_total=spend)
-            lines += format_creative_contributors(top)
+                meta_hist.get(name, {}), d1, direction)
+            lines += format_contrib_header(total_delta, explained, bool(top), d1, today_total=spend)
+            lines += format_creative_contributors(top, d1)
             lines.append('')
         for name, budget, spend, util in sorted(google_flags, key=lambda x: abs(x[3]-1.0), reverse=True):
             direction = 'UNDER' if util < 1.0 else 'OVER'
             lines += format_google_flag(name, budget, spend, util)
-            hist, today_detail = get_google_network_window(name, d1)
-            top, total_delta, explained = google_network_contributors(hist, today_detail, d1, direction)
-            lines += format_contrib_header(total_delta, explained, bool(top), today_total=spend)
-            lines += format_network_contributors(top)
+            hist = get_google_network_window(name, d1)
+            top, total_delta, explained = google_network_contributors(hist, d1, direction)
+            lines += format_contrib_header(total_delta, explained, bool(top), d1, today_total=spend)
+            lines += format_network_contributors(top, d1)
             lines.append('')
 
     msg = '\n'.join(lines)
