@@ -1,0 +1,41 @@
+name: Daily Budget Utilization Pass
+
+# Same time as the budget shift pass (06:15 UTC = 11:45 IST).
+# Flags Meta ad sets / Google campaigns where yesterday's spend deviated
+# >10% from daily budget, with a first-pass diagnostic (top creatives for
+# Meta, network split for Google UAC). Read-only, DM only. Never writes
+# to any ad platform.
+on:
+  schedule:
+    - cron: '15 6 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  budget-util:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install google-ads google-auth requests python-dotenv
+
+      - name: Run budget utilization pass
+        run: python budget_util_pass.py
+        env:
+          WIOM_DASHBOARD_TOKEN: ${{ secrets.WIOM_DASHBOARD_TOKEN }}
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+          META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
+          GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
+          GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}
+          GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}
+          GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}
+          GOOGLE_ADS_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_CUSTOMER_ID }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          # SLACK_DM_USER_ID defaults to U05A9037VFG (Nikhil)
