@@ -203,6 +203,32 @@ def check_trigger(war_room, d1):
     return fires, gap_today, consecutive, meta_cpbl_today, google_cpbl_today
 
 
+def compute_stab_end(last_step_date_str, last_step_time_str):
+    """
+    7-day stabilization window anchored to the LAST REAL shift (not to whatever
+    day a later step-boundary check happens to notice the gap already closed).
+
+    Day-counting: the action's own timestamp decides whether its calendar day
+    counts as day 1 of the window (D1) or is excluded (D0):
+      - action at/after 12:00 IST  -> that day is D0 (not counted); window is
+        D0+1 .. D0+7, i.e. stab_end = last_step_date + 7
+      - action before 12:00 IST    -> that day is D1 (counted); window is
+        D1 .. D1+6, i.e. stab_end = last_step_date + 6
+    Unknown/missing time defaults to the pre-noon (D1) case - the more
+    conservative option, since it ends stabilization a day sooner rather than
+    silently extending it.
+    """
+    last_date = datetime.date.fromisoformat(last_step_date_str)
+    post_noon = False
+    if last_step_time_str:
+        try:
+            post_noon = datetime.datetime.fromisoformat(last_step_time_str).hour >= 12
+        except Exception:
+            post_noon = False
+    offset = STABILIZATION_DAYS if post_noon else STABILIZATION_DAYS - 1
+    return (last_date + datetime.timedelta(days=offset)).isoformat()
+
+
 def compute_shift(gap, meta_total_budget, google_total_budget,
                   from_adset_budget=None, to_camp_budget=None):
     """
@@ -480,11 +506,16 @@ def main():
         print('State reset to none.')
         return
 
+    # Proxy for "when the action was taken": the script only knows when IT ran,
+    # not when the human actually applied the change on Meta/Google. Automated
+    # cron runs land ~11:45 IST (pre-noon -> D1). If the real execution happens
+    # later in the day, hand-edit `last_step_time` in budget_shift_state.json
+    # before the next run to get the correct D0/D1 classification.
+    run_time_ist = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=5, minutes=30)
     if args.date:
         d1 = datetime.date.fromisoformat(args.date)
     else:
-        now_ist = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=5, minutes=30)
-        d1 = (now_ist - datetime.timedelta(days=1)).date()
+        d1 = (run_time_ist - datetime.timedelta(days=1)).date()
 
     state = load_state()
     war_room = get_war_room(d1)
@@ -515,8 +546,10 @@ def main():
         if d1 >= next_step:
             # Re-evaluate gap at step boundary
             if gap is not None and gap < TRIGGER_GAP:
-                # Gap closed - enter stabilization
-                stab_end = (d1 + datetime.timedelta(days=STABILIZATION_DAYS)).isoformat()
+                # Gap closed - enter stabilization, anchored to the LAST REAL
+                # shift (shift['last_step_date']), not to d1 (today's check,
+                # which took no action - this step never actually fired).
+                stab_end = compute_stab_end(shift['last_step_date'], shift.get('last_step_time'))
                 state = {'phase': 'stabilization', 'shift': None, 'stabilization_end': stab_end}
                 if not args.dry_run:
                     save_state(state)
@@ -542,6 +575,7 @@ def main():
                 next_step_date = (d1 + datetime.timedelta(days=STEP_CADENCE_DAYS)).isoformat()
                 state['shift']['step'] = next_step_n
                 state['shift']['last_step_date'] = d1.isoformat()
+                state['shift']['last_step_time'] = run_time_ist.isoformat()
                 state['shift']['next_step_date'] = next_step_date
                 if not args.dry_run:
                     save_state(state)
@@ -583,6 +617,7 @@ def main():
                     'google_campaign': google_target,
                     'trigger_gap_pct': round(gap * 100, 1),
                     'last_step_date':  d1.isoformat(),
+                    'last_step_time':  run_time_ist.isoformat(),
                     'next_step_date':  next_step_date,
                 },
                 'stabilization_end': None,
