@@ -15,7 +15,7 @@ Env (Actions secrets / local C:\\credentials\\.env):
       GOOGLE_ADS_DEVELOPER_TOKEN, GOOGLE_ADS_CLIENT_ID, GOOGLE_ADS_CLIENT_SECRET,
       GOOGLE_ADS_REFRESH_TOKEN, GOOGLE_ADS_CUSTOMER_ID
 """
-import sys, io, os, json, csv, re, argparse, datetime, collections, urllib.request, urllib.parse, tempfile
+import sys, io, os, json, csv, re, argparse, datetime, collections, urllib.request, urllib.parse
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 # ---- spec constants (v1.0) ----
@@ -437,64 +437,6 @@ def append_log(date, gap_pct, shift_rs, source, destination, step_n, total_steps
                     step_n, total_steps or '', 'pending', '', '', note])
 
 
-# ---- chart ----
-
-def generate_cpbl_chart(war_room, d1):
-    """PNG: Meta vs Google CPBL for last 8 days. Returns bytes or None."""
-    try:
-        import matplotlib
-        matplotlib.use('Agg')
-        import matplotlib.pyplot as plt
-        import matplotlib.dates as mdates
-
-        dates, meta_vals, goog_vals = [], [], []
-        for i in range(7, -1, -1):
-            d = d1 - datetime.timedelta(days=i)
-            day = war_room.get(d.isoformat(), {})
-            mc = day.get('meta_cpbl')
-            gc = day.get('google_cpbl')
-            if mc and gc:
-                dates.append(d)
-                meta_vals.append(mc)
-                goog_vals.append(gc)
-
-        if not dates:
-            return None
-
-        fig, ax = plt.subplots(figsize=(8, 3.5))
-        ax.plot(dates, meta_vals, 'o-', color='#E8447A', label='Meta CPBL', linewidth=2, markersize=5)
-        ax.plot(dates, goog_vals, 'o-', color='#4285F4', label='Google CPBL', linewidth=2, markersize=5)
-        ax.fill_between(dates, goog_vals, meta_vals, alpha=0.07, color='#888888')
-
-        # label last point gap
-        if len(dates) >= 1:
-            gap_pct = (meta_vals[-1] - goog_vals[-1]) / meta_vals[-1] * 100
-            ax.annotate(f'Gap {gap_pct:.0f}%', xy=(dates[-1], (meta_vals[-1] + goog_vals[-1]) / 2),
-                        xytext=(6, 0), textcoords='offset points', fontsize=8, color='#555555')
-
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%d %b'))
-        ax.xaxis.set_major_locator(mdates.DayLocator())
-        plt.xticks(rotation=25, ha='right', fontsize=9)
-        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'Rs {x:,.0f}'))
-        ax.set_ylabel('CPBL', fontsize=9)
-        ax.set_title('Meta vs Google CPBL — last 8 days', fontsize=10, fontweight='bold', pad=8)
-        ax.legend(fontsize=9, loc='upper left')
-        ax.grid(axis='y', alpha=0.25, linestyle='--')
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        fig.patch.set_facecolor('#FAFAFA')
-
-        buf = io.BytesIO()
-        plt.tight_layout()
-        plt.savefig(buf, format='png', dpi=130, bbox_inches='tight', facecolor=fig.get_facecolor())
-        plt.close(fig)
-        buf.seek(0)
-        return buf.read()
-    except Exception as e:
-        print(f'warn: chart generation failed - {e}')
-        return None
-
-
 # ---- Slack ----
 
 def slack_api(method, token, payload):
@@ -506,61 +448,7 @@ def slack_api(method, token, payload):
         return json.loads(r.read().decode())
 
 
-def slack_upload_png(png_bytes, filename, channel_id, initial_comment, token):
-    """Upload PNG via Slack Files v2 API and share to channel_id."""
-    # 1. get upload URL — form-encoded (not JSON)
-    form1 = urllib.parse.urlencode({'filename': filename, 'length': str(len(png_bytes))}).encode()
-    req1 = urllib.request.Request(
-        'https://slack.com/api/files.getUploadURLExternal', data=form1,
-        headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/x-www-form-urlencoded'})
-    with urllib.request.urlopen(req1, timeout=30) as r:
-        resp1 = json.loads(r.read())
-    if not resp1.get('ok'):
-        raise RuntimeError(f'getUploadURLExternal: {resp1.get("error")}')
-    upload_url = resp1['upload_url']
-    file_id    = resp1['file_id']
-
-    # 2. PUT bytes to upload URL — use requests if available, else urllib with redirect loop
-    try:
-        import requests as _req
-        r2 = _req.put(upload_url, data=png_bytes, headers={'Content-Type': 'image/png'}, timeout=60)
-        if r2.status_code not in (200, 204):
-            raise RuntimeError(f'PUT upload failed: HTTP {r2.status_code} {r2.text[:200]}')
-    except ImportError:
-        import http.client, urllib.parse as _up
-        url = upload_url
-        for _ in range(5):
-            p = _up.urlparse(url)
-            conn = http.client.HTTPSConnection(p.netloc, timeout=60)
-            path = p.path + (f'?{p.query}' if p.query else '')
-            conn.request('PUT', path, body=png_bytes, headers={'Content-Type': 'image/png'})
-            rr = conn.getresponse()
-            if rr.status in (301, 302, 307, 308):
-                url = rr.getheader('Location')
-                rr.read()
-                continue
-            if rr.status not in (200, 204):
-                raise RuntimeError(f'PUT upload failed: HTTP {rr.status}')
-            rr.read()
-            break
-
-    # 3. complete: share to channel with initial_comment as the text
-    payload3 = json.dumps({
-        'files': [{'id': file_id}],
-        'channel_id': channel_id,
-        'initial_comment': initial_comment,
-    }).encode()
-    req3 = urllib.request.Request(
-        'https://slack.com/api/files.completeUploadExternal', data=payload3,
-        headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'})
-    with urllib.request.urlopen(req3, timeout=30) as r:
-        resp3 = json.loads(r.read())
-    if not resp3.get('ok'):
-        raise RuntimeError(f'completeUploadExternal: {resp3.get("error")}')
-    return resp3
-
-
-def slack_post(text, dm_only=False, chart_png=None):
+def slack_post(text, dm_only=False):
     token = os.environ.get('SLACK_BOT_TOKEN')
     if not token:
         raise SystemExit('SLACK_BOT_TOKEN not set')
@@ -572,13 +460,6 @@ def slack_post(text, dm_only=False, chart_png=None):
     if not dm_only:
         targets.append(('#growth-reports', os.environ.get('SLACK_CHANNEL_ID', SLACK_CHANNEL_DEFAULT)))
     for label, ch in targets:
-        if chart_png:
-            try:
-                slack_upload_png(chart_png, 'cpbl_trend.png', ch, text, token)
-                print(f'posted chart to {label}: ok')
-                continue
-            except Exception as e:
-                print(f'warn: chart upload failed for {label} ({e}), falling back to text')
         resp = slack_api('chat.postMessage', token, {'channel': ch, 'text': text, 'unfurl_links': False, 'mrkdwn': True})
         print(f'posted to {label}:', 'ok' if resp.get('ok') else resp.get('error'))
 
@@ -719,8 +600,7 @@ def main():
 
     print(msg)
     if not args.dry_run:
-        chart_png = generate_cpbl_chart(war_room, d1)
-        slack_post(msg, dm_only=args.dm_only, chart_png=chart_png)
+        slack_post(msg, dm_only=args.dm_only)
 
 
 if __name__ == '__main__':

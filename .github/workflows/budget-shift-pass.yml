@@ -23,7 +23,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install google-ads google-auth requests python-dotenv matplotlib
+          pip install google-ads google-auth requests python-dotenv
 
       - name: Run budget shift pass
         run: python budget_shift_pass.py --dm-only
