@@ -1,24 +1,26 @@
 # -*- coding: utf-8 -*-
-"""Budget utilization pass -> Slack (DM only for now). v0.3
+"""Budget utilization pass -> Slack (DM only for now). v0.4
 
   For every active in-scope Meta ad set and Google campaign, compares
   yesterday's actual spend to its daily budget. Flags anything where
   |spend/budget - 1| > 10%.
 
   v0.3: spend is pulled DIRECTLY from Meta Insights / Google Ads APIs, not
-  the growth-portal dashboard. Two reasons:
-    1. The dashboard never has today's data (only completed days), so it
-       can't get any fresher regardless of when this script runs.
-    2. Budget is always read LIVE (current), since neither platform exposes
-       a clean historical-budget endpoint. If a budget is edited between the
-       spend day closing and whenever this script happens to run, that edit
-       corrupts the comparison - confirmed 2026-07-12: yesterday's spend
-       (accrued entirely under the OLD budget) got compared against a budget
-       that had already been changed hours earlier the same morning.
-       Running as close to midnight as practical (00:15 IST) shrinks that
-       window from ~half a day to minutes, without needing to reconstruct
-       historical budget values via Meta's Activities / Google's
-       change_event logs (the more involved alternative fix).
+  the growth-portal dashboard - it never has today's data (only completed
+  days), so it can't get any fresher regardless of when this script runs.
+
+  v0.4: budget is reconstructed as of end-of-day d1, not read live. Live
+  budget + a run scheduled close to midnight (00:15 IST) shrinks the edit
+  window but doesn't close it, and a --date backtest or a delayed run still
+  compares old spend to a possibly-already-edited budget. Tried Google's
+  change_event API to reconstruct historical budgets automatically - tested
+  2026-07-12 three ways (scoped to the specific campaign, account-wide,
+  filtered by CAMPAIGN resource type) and it never surfaced a known,
+  confirmed campaign_budget edit; unreliable enough that automating on top
+  of it isn't worth it. Manually logged instead: see manual_budget_changes.csv
+  (append via log_budget_change.py) - get_budget_as_of() walks that log
+  backward from the live value, undoing any edit that happened after
+  23:59:59 IST on d1, to reconstruct what was actually in effect that day.
 
   For each flag, the drill-down answers "what changed" rather than just
   "what's biggest": each creative (Meta) / network (Google) is compared
@@ -50,7 +52,7 @@ Env (Actions secrets / local C:\\credentials\\.env):
       GOOGLE_ADS_CLIENT_SECRET, GOOGLE_ADS_REFRESH_TOKEN,
       GOOGLE_ADS_CUSTOMER_ID, SLACK_BOT_TOKEN
 """
-import sys, os, json, argparse, datetime, collections, urllib.request, urllib.parse
+import sys, os, csv, json, argparse, datetime, collections, urllib.request, urllib.parse
 
 from budget_shift_pass import (  # also sets sys.stdout to a utf-8 TextIOWrapper
     load_env, slack_api, get_meta_budgets, get_google_budgets,
@@ -61,6 +63,50 @@ from budget_shift_pass import (  # also sets sys.stdout to a utf-8 TextIOWrapper
 UTIL_THRESHOLD  = 0.10   # flag if |spend/budget - 1| > this
 LOOKBACK_DAYS   = 6      # trailing baseline window, excluding the flagged day (7 days total)
 TOP_CONTRIB_N   = 5
+
+IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+_DIR = os.path.dirname(os.path.abspath(__file__))
+MANUAL_CHANGES_PATH = os.path.join(_DIR, 'manual_budget_changes.csv')
+
+
+# ---- historical budget reconstruction (manually logged - see module docstring) ----
+
+def load_manual_changes():
+    if not os.path.exists(MANUAL_CHANGES_PATH):
+        return []
+    changes = []
+    with open(MANUAL_CHANGES_PATH, newline='', encoding='utf-8') as f:
+        for row in csv.DictReader(f):
+            changes.append({
+                'timestamp': datetime.datetime.fromisoformat(row['timestamp_ist']),
+                'platform': row['platform'],
+                'entity_name': row['entity_name'],
+                'old_budget': float(row['old_budget']),
+                'new_budget': float(row['new_budget']),
+            })
+    return changes
+
+
+def get_budget_as_of(platform, name, d1, current_budget, changes):
+    """
+    Reconstructs the budget in effect at 23:59:59 IST on d1, by walking the
+    manually-logged change history for this entity backward from now and
+    undoing any edit that happened after that moment. Falls back to
+    current_budget if no logged changes exist for this entity - the safe
+    default when nothing's known to have moved.
+    """
+    cutoff = datetime.datetime.combine(d1, datetime.time(23, 59, 59), tzinfo=IST)
+    relevant = sorted(
+        (c for c in changes if c['platform'] == platform and c['entity_name'] == name),
+        key=lambda c: c['timestamp'], reverse=True,
+    )
+    budget = current_budget
+    for c in relevant:
+        if c['timestamp'] > cutoff:
+            budget = c['old_budget']
+        else:
+            break
+    return budget
 
 
 # ---- Meta: today's spend per ad set + ad-level history for contributor analysis ----
@@ -322,10 +368,11 @@ def main():
     meta_budgets   = get_meta_budgets()
     google_budgets = get_google_budgets()
     meta_today_by_adset, meta_hist = get_meta_spend_window(d1)
+    manual_changes = load_manual_changes()
 
     meta_flags   = []
     for name, d in meta_budgets.items():
-        budget = d['daily_budget']
+        budget = get_budget_as_of('meta', name, d1, d['daily_budget'], manual_changes)
         spend  = meta_today_by_adset.get(name, 0.0)
         if budget <= 0: continue
         util = spend / budget
@@ -335,7 +382,7 @@ def main():
     goog_today_by_camp = get_google_day_spend(d1)
     google_flags = []
     for name, d in google_budgets.items():
-        budget = d['daily_budget']
+        budget = get_budget_as_of('google', name, d1, d['daily_budget'], manual_changes)
         spend  = goog_today_by_camp.get(name, 0.0)
         if budget <= 0: continue
         util = spend / budget
