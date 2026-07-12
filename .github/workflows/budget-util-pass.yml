@@ -1,13 +1,20 @@
 name: Daily Budget Utilization Pass
 
-# Same time as the budget shift pass (06:15 UTC = 11:45 IST).
+# 00:15 IST (18:45 UTC, previous calendar day) - deliberately close to midnight,
+# not the same slot as the other passes (11:45 IST). Spend and budget are both
+# pulled directly from Meta/Google (no growth-dashboard dependency). Running
+# this close to the spend day's close minimizes the window in which a human
+# budget edit between day-close and the check could make spend (from before
+# the edit) and budget (read live) mismatch - confirmed happening for real on
+# 2026-07-12 when a same-morning edit was compared against the prior day's
+# spend at an 11:45 IST run.
 # Flags Meta ad sets / Google campaigns where yesterday's spend deviated
-# >10% from daily budget, with a first-pass diagnostic (top creatives for
-# Meta, network split for Google UAC). Read-only, DM only. Never writes
-# to any ad platform.
+# >10% from daily budget, with a first-pass diagnostic (top ads for Meta,
+# network split for Google UAC). Read-only, DM only. Never writes to any ad
+# platform.
 on:
   schedule:
-    - cron: '15 6 * * *'
+    - cron: '45 18 * * *'
   workflow_dispatch: {}
 
 jobs:
@@ -29,7 +36,6 @@ jobs:
       - name: Run budget utilization pass
         run: python budget_util_pass.py
         env:
-          WIOM_DASHBOARD_TOKEN: ${{ secrets.WIOM_DASHBOARD_TOKEN }}
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
           META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
           GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}

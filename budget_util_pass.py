@@ -1,9 +1,24 @@
 # -*- coding: utf-8 -*-
-"""Budget utilization pass -> Slack (DM only for now). v0.2
+"""Budget utilization pass -> Slack (DM only for now). v0.3
 
   For every active in-scope Meta ad set and Google campaign, compares
   yesterday's actual spend to its daily budget. Flags anything where
   |spend/budget - 1| > 10%.
+
+  v0.3: spend is pulled DIRECTLY from Meta Insights / Google Ads APIs, not
+  the growth-portal dashboard. Two reasons:
+    1. The dashboard never has today's data (only completed days), so it
+       can't get any fresher regardless of when this script runs.
+    2. Budget is always read LIVE (current), since neither platform exposes
+       a clean historical-budget endpoint. If a budget is edited between the
+       spend day closing and whenever this script happens to run, that edit
+       corrupts the comparison - confirmed 2026-07-12: yesterday's spend
+       (accrued entirely under the OLD budget) got compared against a budget
+       that had already been changed hours earlier the same morning.
+       Running as close to midnight as practical (00:15 IST) shrinks that
+       window from ~half a day to minutes, without needing to reconstruct
+       historical budget values via Meta's Activities / Google's
+       change_event logs (the more involved alternative fix).
 
   For each flag, the drill-down answers "what changed" rather than just
   "what's biggest": each creative (Meta) / network (Google) is compared
@@ -31,16 +46,16 @@
 
 Run:  python budget_util_pass.py  [--dry-run] [--date YYYY-MM-DD]
 Env (Actions secrets / local C:\\credentials\\.env):
-      WIOM_DASHBOARD_TOKEN, META_ACCESS_TOKEN,
-      GOOGLE_ADS_DEVELOPER_TOKEN, GOOGLE_ADS_CLIENT_ID, GOOGLE_ADS_CLIENT_SECRET,
-      GOOGLE_ADS_REFRESH_TOKEN, GOOGLE_ADS_CUSTOMER_ID, SLACK_BOT_TOKEN
+      META_ACCESS_TOKEN, GOOGLE_ADS_DEVELOPER_TOKEN, GOOGLE_ADS_CLIENT_ID,
+      GOOGLE_ADS_CLIENT_SECRET, GOOGLE_ADS_REFRESH_TOKEN,
+      GOOGLE_ADS_CUSTOMER_ID, SLACK_BOT_TOKEN
 """
-import sys, os, argparse, datetime, collections
+import sys, os, json, argparse, datetime, collections, urllib.request, urllib.parse
 
 from budget_shift_pass import (  # also sets sys.stdout to a utf-8 TextIOWrapper
-    load_env, dget, slack_api, get_meta_budgets, get_google_budgets,
+    load_env, slack_api, get_meta_budgets, get_google_budgets,
     META_IN_SCOPE, GOOGLE_IN_SCOPE, GOOGLE_TOF_EXCLUDE,
-    GOOGLE_CID_DEFAULT, SLACK_DM_DEFAULT,
+    META_ACC_DEFAULT, META_VER_DEFAULT, GOOGLE_CID_DEFAULT, SLACK_DM_DEFAULT,
 )
 
 UTIL_THRESHOLD  = 0.10   # flag if |spend/budget - 1| > this
@@ -48,29 +63,73 @@ LOOKBACK_DAYS   = 6      # trailing baseline window, excluding the flagged day (
 TOP_CONTRIB_N   = 5
 
 
-# ---- Meta: today's spend per ad set + creative-level history for contributor analysis ----
+# ---- Meta: today's spend per ad set + ad-level history for contributor analysis ----
 
-def get_meta_window(d1, lookback=LOOKBACK_DAYS):
+def get_meta_spend_window(d1, lookback=LOOKBACK_DAYS):
     """
+    Direct Meta Insights API (level=ad, time_increment=1) for [d1-lookback, d1].
     Returns (today_by_adset, hist).
       today_by_adset[ad_set]              -> spend on d1 (for the flag check)
-      hist[ad_set][creative][date_iso]    -> spend (for baseline/contributor calc)
+      hist[ad_set][ad_name][date_iso]     -> spend (for baseline/contributor calc)
     """
+    tok = os.environ.get('META_ACCESS_TOKEN')
+    if not tok: return {}, {}
+    acc = 'act_' + os.environ.get('META_AD_ACCOUNT_ID', META_ACC_DEFAULT).replace('act_', '')
+    ver = os.environ.get('META_API_VERSION', META_VER_DEFAULT)
     start = (d1 - datetime.timedelta(days=lookback)).isoformat()
-    rows = dget('/api/master_export?' + f'start={start}&end={d1.isoformat()}')
     today_iso = d1.isoformat()
+
     today_by_adset = collections.defaultdict(float)
     hist = collections.defaultdict(lambda: collections.defaultdict(lambda: collections.defaultdict(float)))
-    for r in rows:
-        if r.get('channel') != 'META': continue
-        aset = r.get('ad_set')
-        creative = r.get('creative') or '(Unresolved)'
-        date = r.get('date')
-        sp = float(r.get('spend') or 0)
-        hist[aset][creative][date] += sp
-        if date == today_iso:
-            today_by_adset[aset] += sp
-    return today_by_adset, hist
+
+    params = {
+        'level': 'ad',
+        'time_increment': 1,
+        'time_range': json.dumps({'since': start, 'until': today_iso}),
+        'fields': 'adset_name,ad_name,spend,date_start',
+        'limit': 500,
+        'access_token': tok,
+    }
+    url = f'https://graph.facebook.com/{ver}/{acc}/insights?' + urllib.parse.urlencode(params)
+    while url:
+        with urllib.request.urlopen(url, timeout=60) as r:
+            resp = json.loads(r.read().decode())
+        for row in resp.get('data', []):
+            aset = row.get('adset_name')
+            ad_name = row.get('ad_name') or '(unnamed)'
+            date = row.get('date_start')
+            sp = float(row.get('spend') or 0)
+            hist[aset][ad_name][date] += sp
+            if date == today_iso:
+                today_by_adset[aset] += sp
+        url = resp.get('paging', {}).get('next')
+    return dict(today_by_adset), hist
+
+
+def get_google_day_spend(d1):
+    """Direct Google Ads API: campaign-level spend for a single day (d1)."""
+    try:
+        from google.ads.googleads.client import GoogleAdsClient
+        config = {
+            'developer_token': os.environ['GOOGLE_ADS_DEVELOPER_TOKEN'],
+            'client_id': os.environ['GOOGLE_ADS_CLIENT_ID'],
+            'client_secret': os.environ['GOOGLE_ADS_CLIENT_SECRET'],
+            'refresh_token': os.environ['GOOGLE_ADS_REFRESH_TOKEN'],
+            'login_customer_id': os.environ.get('GOOGLE_ADS_CUSTOMER_ID', GOOGLE_CID_DEFAULT).replace('-', ''),
+            'use_proto_plus': True,
+        }
+        client = GoogleAdsClient.load_from_dict(config)
+        ga = client.get_service('GoogleAdsService')
+        cid = config['login_customer_id']
+        query = f'''SELECT campaign.name, metrics.cost_micros
+                    FROM campaign WHERE segments.date = '{d1.isoformat()}' '''
+        spend = collections.defaultdict(float)
+        for row in ga.search(customer_id=cid, query=query):
+            spend[row.campaign.name] += row.metrics.cost_micros / 1_000_000
+        return dict(spend)
+    except Exception as e:
+        print(f'warn: google day spend failed - {e}')
+        return {}
 
 
 def meta_creative_contributors(ad_set_hist, d1, direction, n=TOP_CONTRIB_N):
@@ -262,7 +321,7 @@ def main():
 
     meta_budgets   = get_meta_budgets()
     google_budgets = get_google_budgets()
-    meta_today_by_adset, meta_hist = get_meta_window(d1)
+    meta_today_by_adset, meta_hist = get_meta_spend_window(d1)
 
     meta_flags   = []
     for name, d in meta_budgets.items():
@@ -273,14 +332,7 @@ def main():
         if abs(util - 1.0) > UTIL_THRESHOLD:
             meta_flags.append((name, budget, spend, util))
 
-    # today's Google spend from a single-day master_export pull (kept separate
-    # from Meta's window fetch since Google's drill-down uses the Ads API
-    # directly, not master_export history)
-    goog_today_rows = dget('/api/master_export?' + f'start={d1.isoformat()}&end={d1.isoformat()}')
-    goog_today_by_camp = collections.defaultdict(float)
-    for r in goog_today_rows:
-        if r.get('channel') == 'GOOGLE':
-            goog_today_by_camp[r.get('campaign')] += float(r.get('spend') or 0)
+    goog_today_by_camp = get_google_day_spend(d1)
     google_flags = []
     for name, d in google_budgets.items():
         budget = d['daily_budget']
