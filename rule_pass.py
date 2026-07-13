@@ -26,6 +26,10 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='repla
 CAMPAIGN_START    = '2026-06-01'
 WINDOW_DAYS       = 7              # only for prune delivery-velocity + geo/weekly views
 CREATIVE_BFC_GATE = 5             # LIFETIME bfc to be efficiency-killable
+AGE_GRACE_DAYS    = 7             # v2.3.0: below CREATIVE_BFC_GATE is fine within the first 7d
+                                    # of deployment; past that, still-thin + bad CPBFC + under the
+                                    # brake spend floor becomes kill-eligible (closes the case where
+                                    # a creative never crosses either gate and sits in MONITOR forever)
 ZERO_BFC_SPEND    = 10000         # Rs lifetime spend, 0 bfc -> kill
 KILL_MULT         = {'L1': 1.0, 'L2': 1.0, 'L3': 1.2, 'untagged': 1.0}
 DAILY_KILL_CAP    = 3             # v2.2.0: if efficiency-kill candidates > 3, rank by ratio worst-first, cap at 3
@@ -434,6 +438,13 @@ def decide(data, age, cstar, active, funnel_geo=None):
             if x <= ISOLATE_MULT * med and lb >= ISOLATE_BFC_GATE:
                 verdict[c] = 'ISOLATE'; res['isolates'].append((c, lyr, rec['need'], lb, sp, x)); continue
             verdict[c] = 'CONTINUE' if x < med else 'MONITOR'
+        elif kt and age.get(c, 0) > AGE_GRACE_DAYS and x >= kt:
+            # v2.3.0: aged-out - past the 7-day grace window, still below the lifetime
+            # BFC gate (thin sample) and under the brake spend floor (else the brake
+            # check above would already have caught it), but already CPBFC-bad enough
+            # to fail efficiency if it had reached the gate.
+            eff_kill_candidates.append((c, lyr, rec['need'], lb, sp, x,
+                f'aged-out (>{AGE_GRACE_DAYS}d, {lb} BFC, >= {mult}x median Rs{med:,.0f})', x / med))
         else:
             verdict[c] = 'MONITOR'
     # v2.2.0: daily kill cap - rank by ratio (worst first), kill top DAILY_KILL_CAP, defer rest to MONITOR
