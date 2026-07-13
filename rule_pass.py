@@ -511,6 +511,7 @@ def decide(data, age, cstar, active, funnel_geo=None):
             flags.append(f"svc->booking {100*g_conv_rate:.1f}% vs Delhi {100*del_conv_rate:.1f}% -> review conversion levers")
         if flags:
             res['geo_conv'].append((g, flags, w7s))
+    res['verdict'] = dict(verdict)  # full per-creative classification, for ad-hoc inspection - not used in msg_daily/msg_weekly
     return res
 
 
