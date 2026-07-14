@@ -45,7 +45,9 @@ TRIGGER_GAP          = 0.10   # channel CPBL gap threshold to consider any shift
 FAST_ITERATE_GAP     = 0.15   # above this, don't wait out stabilization - keep iterating
 TRIGGER_DAYS         = 3      # consecutive days above threshold to fire/override
 MAX_STEP_PCT         = 0.15   # max budget change per step, PER ad set/campaign (both sides)
-STEP_CADENCE_DAYS    = 3      # days between steps
+STEP_CADENCE_DAYS    = 1      # days between steps (was 3 - too slow when the gap is this
+                               # large; Nikhil, 2026-07-13. Note this compounds fast at
+                               # MAX_STEP_PCT=15%/step - see red flags in the same commit)
 STABILIZATION_DAYS   = 7      # days of read after gap cools to <= FAST_ITERATE_GAP
 MIN_BFC_FOR_CPBL     = 20     # min 7-day BFC to trust an ad set's CPBL without caveat
 PAUSE_CANDIDATE_MULT = 2.0    # flag a Meta source as a pause candidate at >= this x the best CPBL

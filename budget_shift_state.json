@@ -48,7 +48,7 @@
     "trigger_gap_pct": 49.6,
     "last_step_date": "2026-07-12",
     "last_step_time": "2026-07-12T00:54:03+05:30",
-    "next_step_date": "2026-07-15",
+    "next_step_date": "2026-07-13",
     "note": "Manual execution per Guneet/Nikhil Slack thread 2026-07-11 (#growth-reports). Paused 4 low-efficiency Bharat city ad sets (CPBL 2,745-13,689) instead of trimming DEL_ALL_PBFC (CPBL 1,374, untouched). Freed Meta budget: Rs 8,000/day. Funded to Google: Rs 8,500/day (UAC +8,000, Search Brand +500) - a Rs 500/day net increase, not a clean 1:1 shift."
   },
   "stabilization_end": null
