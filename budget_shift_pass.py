@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Budget channel rebalancing pass -> Slack. Spec v2.0.
+"""Budget channel rebalancing pass -> Slack. Spec v2.1.
 
   Runs daily after kill pass (07:30 IST). Checks 7-day rolling Branch-attributed
   CPBL per channel (Meta vs Google). Trigger: gap > 10% for 3 consecutive days.
@@ -15,17 +15,21 @@
   Sizing (v2.0): each step's total move is a channel-level ceiling
   (min(gap/2, 15%) x Meta total, capped at 15% x Google total). That total is
   then DISTRIBUTED - not dumped into one ad set/campaign:
-    - Meta: drawn from BFC-VOLUME ad sets worst-CPBL-first (never RETARGETING),
-      each capped at 15% of its own budget - so the shift stops loading
-      entirely onto whichever ad set happens to be biggest, and instead hits
-      the worst performers first.
+    - Meta: drawn from ALL in-scope ad sets worst-CPBL-first, each capped at
+      15% of its own budget - so the shift stops loading entirely onto
+      whichever ad set happens to be biggest, and instead hits the worst
+      performers first. RETARGETING became eligible 2026-07-13 (v2.1) - it
+      was excluded by default before, but two independent reads (point-in-
+      time CPBL and the 2-week trend) agreed it had become the weakest Meta
+      performer, not just a thin-sample blip, so the blanket exclusion no
+      longer held.
     - Google: funded into in-scope campaigns best-CPBL-first, each ALSO capped
       at 15% of its own budget (previously the whole channel-level amount
       could land on one campaign, silently exceeding that campaign's own 15%
       anti-shock cap - the same discipline now applies to both sides).
-  Ad sets whose CPBL is >= 2x the best BFC-VOLUME performer are flagged as
-  pause candidates in the message (advisory only - pausing is always a human
-  call, never sized into the automatic allocation).
+  Ad sets whose CPBL is >= 2x the best Meta performer are flagged as pause
+  candidates in the message (advisory only - pausing is always a human call,
+  never sized into the automatic allocation).
 
   Posts recommendation to Slack; human approves and executes. Read-only -
   it NEVER writes to any ad platform.
@@ -298,13 +302,13 @@ def compute_shift_target(gap, meta_total_budget, google_total_budget):
 
 
 def rank_meta_sources(meta_budgets, meta_eff):
-    """BFC-VOLUME ad sets ranked worst-CPBL-first (RETARGETING is never a source).
-    Ad sets without enough data for a CPBL read sort last - cut a known-bad
-    performer before an unknown one."""
+    """All in-scope Meta ad sets (BFC-VOLUME AND RETARGETING) ranked worst-CPBL-first.
+    RETARGETING became eligible 2026-07-13 - two independent reads (point-in-time
+    CPBL and the 2-week trend) agreed it was the weakest Meta performer, not just a
+    thin-sample blip. Ad sets without enough data for a CPBL read sort last - cut a
+    known-bad performer before an unknown one."""
     rows = []
     for name, d in meta_budgets.items():
-        if d['type'] != 'BFC-VOLUME':
-            continue
         eff = meta_eff.get(name, {'spend': 0.0, 'bc': 0})
         cpbl = (eff['spend'] / eff['bc']) if eff['bc'] > 0 else None
         rows.append({'name': name, 'budget': d['daily_budget'], 'cpbl': cpbl, 'bc': eff['bc']})
@@ -343,9 +347,9 @@ def allocate(target_rs, ranked_rows):
 
 
 def pause_candidates(ranked_meta_sources):
-    """Advisory only: Meta BFC-VOLUME ad sets whose CPBL is >= PAUSE_CANDIDATE_MULT
-    times the best BFC-VOLUME CPBL. Never sized into the automatic allocation -
-    pausing an ad set entirely is always a human call."""
+    """Advisory only: Meta ad sets whose CPBL is >= PAUSE_CANDIDATE_MULT times the
+    best in-scope Meta CPBL. Never sized into the automatic allocation - pausing an
+    ad set entirely is always a human call."""
     known = [r for r in ranked_meta_sources if r['cpbl'] is not None]
     if not known: return []
     best = min(r['cpbl'] for r in known)
@@ -414,7 +418,7 @@ def msg_trigger(gap, consecutive, meta_cpbl, google_cpbl, target_rs,
     for a in meta_allocs:
         lines.append(f'  `{a["name"]}`  -{fmt_rs(a["amount"])}/day  (CPBL {fmt_cpbl(a["cpbl"])})')
     if not meta_allocs:
-        lines.append('  _no eligible Meta BFC-VOLUME ad set found_')
+        lines.append('  _no eligible Meta ad set found_')
     lines += ['', f'  Total reduced: {fmt_rs(total_meta)}/day', '', '*Fund (Google):*']
     for a in google_allocs:
         lines.append(f'  `{a["name"]}`  +{fmt_rs(a["amount"])}/day  (CPBL {fmt_cpbl(a["cpbl"])})')
@@ -424,7 +428,7 @@ def msg_trigger(gap, consecutive, meta_cpbl, google_cpbl, target_rs,
 
     if pauses:
         lines += ['', ':bulb: *Pause candidates* '
-                  f'(CPBL >= {PAUSE_CANDIDATE_MULT:.0f}x your best BFC-VOLUME ad set - '
+                  f'(CPBL >= {PAUSE_CANDIDATE_MULT:.0f}x your best Meta ad set - '
                   'consider pausing entirely rather than just trimming; advisory only, not sized above):']
         for r in pauses:
             lines.append(f'  `{r["name"]}`  CPBL {fmt_cpbl(r["cpbl"])}  ({r["bc"]} bookings/7d)')
@@ -533,7 +537,7 @@ def start_new_shift(gap, consecutive, meta_cpbl, google_cpbl, d1, run_time_ist, 
     """Builds step-1 allocations, saves state (unless dry_run), returns the Slack message."""
     meta_budgets   = get_meta_budgets()
     google_budgets = get_google_budgets()
-    meta_total   = sum(d['daily_budget'] for d in meta_budgets.values() if d['type'] != 'RETARGETING')
+    meta_total   = sum(d['daily_budget'] for d in meta_budgets.values() if d['type'] != 'RETARGETING')  # channel ceiling stays gap-driven, unrelated to which ad sets are eligible sources
     google_total = sum(d['daily_budget'] for d in google_budgets.values())
     meta_eff, google_eff = get_efficiency_data(d1)
 
@@ -649,7 +653,7 @@ def main():
             else:
                 meta_budgets   = get_meta_budgets()
                 google_budgets = get_google_budgets()
-                meta_total   = sum(d['daily_budget'] for d in meta_budgets.values() if d['type'] != 'RETARGETING')
+                meta_total   = sum(d['daily_budget'] for d in meta_budgets.values() if d['type'] != 'RETARGETING')  # channel ceiling stays gap-driven, unrelated to which ad sets are eligible sources
                 google_total = sum(d['daily_budget'] for d in google_budgets.values())
                 meta_eff, google_eff = get_efficiency_data(d1)
 
