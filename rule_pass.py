@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """BFC-VOLUME kill + prune pass -> Slack. Operating Spec v2.2.0 (post SD sign-off, 1 Jul 2026).
 
-  DAILY (post-ETL): efficiency kill + zero-BFC kill + cost-velocity brake (KILL-REVIEW) + pool-cap
-        prune cut-list. Lifetime CPBFC (booking_confirmed), lifetime 5-BFC gate, NO calendar grace,
+  DAILY (post-ETL): efficiency kill + zero-BC kill + cost-velocity brake (KILL-REVIEW) + pool-cap
+        prune cut-list. Lifetime CPBC (booking_confirmed), lifetime 5-BC gate, NO calendar grace,
         active-only median (Meta effective_status filter), first-spend anchoring. Delhi only.
   WEEKLY (review): isolate candidates + geo budget (SCALE/HOLD vs C*) + geo conversion (CAP/CUT).
 
@@ -25,25 +25,25 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='repla
 # ---- spec constants (v2.2.0, SD sign-off 1 Jul 2026) ----
 CAMPAIGN_START    = '2026-06-01'
 WINDOW_DAYS       = 7              # only for prune delivery-velocity + geo/weekly views
-CREATIVE_BFC_GATE = 5             # LIFETIME bfc to be efficiency-killable
-AGE_GRACE_DAYS    = 7             # v2.3.0: below CREATIVE_BFC_GATE is fine within the first 7d
-                                    # of deployment; past that, still-thin + bad CPBFC + under the
+CREATIVE_BC_GATE = 5             # LIFETIME bc to be efficiency-killable
+AGE_GRACE_DAYS    = 7             # v2.3.0: below CREATIVE_BC_GATE is fine within the first 7d
+                                    # of deployment; past that, still-thin + bad CPBC + under the
                                     # brake spend floor becomes kill-eligible (closes the case where
                                     # a creative never crosses either gate and sits in MONITOR forever)
-ZERO_BFC_SPEND    = 10000         # Rs lifetime spend, 0 bfc -> kill
+ZERO_BC_SPEND    = 10000         # Rs lifetime spend, 0 bc -> kill
 KILL_MULT         = {'L1': 1.0, 'L2': 1.0, 'L3': 1.2, 'untagged': 1.0}
 DAILY_KILL_CAP    = 3             # v2.2.0: if efficiency-kill candidates > 3, rank by ratio worst-first, cap at 3
 TOP_SPENDER_SHARE = 0.10          # v2.2.0: warn (not block) if kill candidate holds >10% of pool daily avg spend
 L3_FLIP           = False         # Discovery box not operational -> L3 holds 1.2x (auto-flip to 1.0 later)
-BLENDED_TARGET    = 500           # Rs; C* = BLENDED_TARGET * totalBFC / paidBFC
+BLENDED_TARGET    = 500           # Rs; C* = BLENDED_TARGET * totalBC / paidBC
 BRAKE_SPEND_FLOOR = 15000         # Rs
 BRAKE_CSTAR_MULT  = 5
-BRAKE_CPBFC_MULT  = 2.0           # x the creative kill line
+BRAKE_CPBC_MULT  = 2.0           # x the creative kill line
 ISOLATE_MULT      = 0.7
-ISOLATE_BFC_GATE  = 12
+ISOLATE_BC_GATE  = 12
 POOL_CAP          = 15
 MATURE_GEOS       = {'Delhi'}
-GEO_BUDGET_BFC_GATE = 10
+GEO_BUDGET_BC_GATE = 10
 GEO_CONV_INSTALLS = 100
 GEO_CONV_MULT     = 2.0
 GEO_RUNAWAY_SPEND = 50000
@@ -222,8 +222,8 @@ def write_log_entry(log, res, d1, ad_ids_map, median):
             'need': need,
             'verdict': 'KILL',
             'reason': reason,
-            'cpbfc': round(x, 2) if x != float('inf') else None,
-            'bfc': int(lb),
+            'cpbc': round(x, 2) if x != float('inf') else None,
+            'bc': int(lb),
             'spend': round(sp, 2),
             'median_at_time': round(median, 2) if median else None,
             'ad_ids': ad_ids_map.get(c, []),
@@ -233,7 +233,7 @@ def write_log_entry(log, res, d1, ad_ids_map, median):
     log = [e for e in log if e['date'] != d1.isoformat()]
     log.append({
         'date': d1.isoformat(),
-        'median_cpbfc': round(median, 2) if median else None,
+        'median_cpbc': round(median, 2) if median else None,
         'recos': recos,
     })
     log.sort(key=lambda e: e['date'])
@@ -258,7 +258,7 @@ def sheet_sync(log, d1):
         for entry in log:
             if entry['date'] != today_str: continue
             for reco in entry.get('recos', []):
-                x = reco.get('cpbfc')
+                x = reco.get('cpbc')
                 med = reco.get('median_at_time')
                 ws.append_row([
                     entry['date'],
@@ -266,7 +266,7 @@ def sheet_sync(log, d1):
                     reco['verdict'],
                     reco.get('reason', ''),
                     f"{x:,.0f}" if x is not None else 'inf',
-                    reco.get('bfc', ''),
+                    reco.get('bc', ''),
                     f"{reco.get('spend', 0):,.0f}",
                     f"{med:,.0f}" if med is not None else '',
                     ','.join(reco.get('ad_ids', [])),
@@ -307,9 +307,9 @@ def write_action_log_csv(log, d1):
                 reco.get('concept_id', ''),
                 reco.get('layer', ''),
                 reco.get('need', ''),
-                reco.get('bfc', ''),
+                reco.get('bc', ''),
                 reco.get('spend', ''),
-                reco.get('cpbfc', ''),
+                reco.get('cpbc', ''),
                 reco.get('median_at_time', ''),
                 reco.get('reason', ''),
                 '|'.join(reco.get('ad_ids', [])),
@@ -322,8 +322,8 @@ def write_action_log_csv(log, d1):
         with open(ACTION_LOG_PATH, 'a', newline='', encoding='utf-8') as f:
             w = csv.writer(f)
             if write_header:
-                w.writerow(['reco_date', 'concept_id', 'layer', 'need_state', 'bfc', 'spend',
-                            'cpbfc', 'median_at_time', 'reason', 'ad_ids',
+                w.writerow(['reco_date', 'concept_id', 'layer', 'need_state', 'bc', 'spend',
+                            'cpbc', 'median_at_time', 'reason', 'ad_ids',
                             'action_taken', 'action_timing'])
             w.writerows(rows)
         print(f'action log: wrote {len(rows)} row(s) for {yesterday}')
@@ -354,7 +354,7 @@ def compute(d1):
     metric_start = (d1 - datetime.timedelta(days=WINDOW_DAYS - 1)).isoformat()
     rows = dget('/api/master_export?' + urllib.parse.urlencode({'start': CAMPAIGN_START, 'end': d1.isoformat()}))
     data = collections.defaultdict(lambda: collections.defaultdict(
-        lambda: {'spend': 0.0, 'bfc': 0, 'inst': 0, 'w7s': 0.0, 'w7i': 0, 'layer': 'untagged', 'need': '?'}))
+        lambda: {'spend': 0.0, 'bc': 0, 'inst': 0, 'w7s': 0.0, 'w7i': 0, 'layer': 'untagged', 'need': '?'}))
     first = {}
     for r in rows:
         if r.get('channel') != 'META' or 'BFC-VOLUME' not in str(r.get('campaign', '')).upper(): continue
@@ -365,13 +365,13 @@ def compute(d1):
         cid = m.group(0); g = geo_of(r.get('ad_set', '')) or geo_of(r.get('campaign', '')) or 'Other'
         dt = str(r.get('date', '')); sp = r.get('spend') or 0; bf = r.get('booking_confirmed') or 0; ins = r.get('app_installs') or 0
         rec = data[g][cid]
-        rec['spend'] += sp; rec['bfc'] += bf; rec['inst'] += ins
+        rec['spend'] += sp; rec['bc'] += bf; rec['inst'] += ins
         rec['layer'] = layer_of(nm); rec['need'] = need_of(nm)
         if sp > 0 and (cid not in first or dt < first[cid]): first[cid] = dt
         if dt >= metric_start:
             rec['w7s'] += sp; rec['w7i'] += ins; rec['w7b'] = rec.get('w7b', 0) + bf
     # ---- funnel rows for non-Delhi geo diagnostic (7-day window) ----
-    funnel_geo = collections.defaultdict(lambda: {'inst': 0, 'svc_check': 0, 'svc_true': 0, 'bfc': 0, 'w7s': 0.0})
+    funnel_geo = collections.defaultdict(lambda: {'inst': 0, 'svc_check': 0, 'svc_true': 0, 'bc': 0, 'w7s': 0.0})
     try:
         frows = dget('/api/funnel_rows?' + urllib.parse.urlencode({'start': metric_start, 'end': d1.isoformat()}))
         for r in frows:
@@ -382,7 +382,7 @@ def compute(d1):
             fg['inst']      += r.get('app_installs') or 0
             fg['svc_check'] += r.get('serviceable_check') or 0
             fg['svc_true']  += r.get('serviceable_true') or 0
-            fg['bfc']       += r.get('booking_confirmed') or 0
+            fg['bc']       += r.get('booking_confirmed') or 0
         # pull 7-day spend per non-Delhi geo from master_export (already iterated above via data)
         for g, wc in data.items():
             if g == 'Other': continue
@@ -398,13 +398,13 @@ def compute(d1):
         wr = dget('/api/war_room?' + urllib.parse.urlencode({'start': metric_start, 'end': d1.isoformat()}))
         days = wr.get('days', wr) if isinstance(wr, dict) else wr
         tot = sum(d.get('bookings') or 0 for d in days)
-        paid = sum((d.get('meta_bfc') or 0) + (d.get('google_bfc') or 0) for d in days)
+        paid = sum((d.get('meta_bc') or 0) + (d.get('google_bc') or 0) for d in days)
         if paid: cstar = BLENDED_TARGET * tot / paid
     except Exception: pass
     return data, age, cstar, dict(funnel_geo)
 
 
-def cpbfc(rec): return rec['spend'] / rec['bfc'] if rec['bfc'] else float('inf')
+def cpbc(rec): return rec['spend'] / rec['bc'] if rec['bc'] else float('inf')
 
 
 def decide(data, age, cstar, active, funnel_geo=None):
@@ -414,8 +414,8 @@ def decide(data, age, cstar, active, funnel_geo=None):
     pool = data.get('Delhi', {})
     spent = [c for c in pool if pool[c]['spend'] > 0]
     def act(c): return (active is None) or (c in active)
-    elig_active = [c for c in spent if act(c) and pool[c]['bfc'] >= CREATIVE_BFC_GATE]
-    med = statistics.median([cpbfc(pool[c]) for c in elig_active]) if elig_active else None
+    elig_active = [c for c in spent if act(c) and pool[c]['bc'] >= CREATIVE_BC_GATE]
+    med = statistics.median([cpbc(pool[c]) for c in elig_active]) if elig_active else None
     res['median'] = med
     brake_spend = max(BRAKE_CSTAR_MULT * cstar, BRAKE_SPEND_FLOOR) if cstar else BRAKE_SPEND_FLOOR
     res['brake_spend'] = brake_spend
@@ -423,28 +423,28 @@ def decide(data, age, cstar, active, funnel_geo=None):
     eff_kill_candidates = []  # (c, lyr, need, lb, sp, x, reason, ratio) - capped below
     for c in spent:
         if not act(c): continue
-        rec = pool[c]; lb = rec['bfc']; sp = rec['spend']; x = cpbfc(rec); lyr = rec['layer']
+        rec = pool[c]; lb = rec['bc']; sp = rec['spend']; x = cpbc(rec); lyr = rec['layer']
         mult = KILL_MULT.get(lyr, 1.0)
         if lyr == 'L3' and L3_FLIP: mult = 1.0
         kt = (mult * med) if med else None
-        if lb == 0 and sp >= ZERO_BFC_SPEND:
-            verdict[c] = 'KILL'; res['kills'].append((c, lyr, rec['need'], lb, sp, x, 'zero-BFC')); continue
-        if kt and sp >= brake_spend and x >= BRAKE_CPBFC_MULT * kt:
+        if lb == 0 and sp >= ZERO_BC_SPEND:
+            verdict[c] = 'KILL'; res['kills'].append((c, lyr, rec['need'], lb, sp, x, 'zero-BC')); continue
+        if kt and sp >= brake_spend and x >= BRAKE_CPBC_MULT * kt:
             verdict[c] = 'KILL_REVIEW'; res['reviews'].append((c, lyr, rec['need'], lb, sp, x, f'brake (>=2x line, spend Rs{sp:,.0f})')); continue
-        if lb >= CREATIVE_BFC_GATE and kt:
+        if lb >= CREATIVE_BC_GATE and kt:
             if x >= kt:
                 eff_kill_candidates.append((c, lyr, rec['need'], lb, sp, x, f'efficiency (>= {mult}x median Rs{med:,.0f})', x / med))
                 continue
-            if x <= ISOLATE_MULT * med and lb >= ISOLATE_BFC_GATE:
+            if x <= ISOLATE_MULT * med and lb >= ISOLATE_BC_GATE:
                 verdict[c] = 'ISOLATE'; res['isolates'].append((c, lyr, rec['need'], lb, sp, x)); continue
             verdict[c] = 'CONTINUE' if x < med else 'MONITOR'
         elif kt and age.get(c, 0) > AGE_GRACE_DAYS and x >= kt:
             # v2.3.0: aged-out - past the 7-day grace window, still below the lifetime
-            # BFC gate (thin sample) and under the brake spend floor (else the brake
-            # check above would already have caught it), but already CPBFC-bad enough
+            # BC gate (thin sample) and under the brake spend floor (else the brake
+            # check above would already have caught it), but already CPBC-bad enough
             # to fail efficiency if it had reached the gate.
             eff_kill_candidates.append((c, lyr, rec['need'], lb, sp, x,
-                f'aged-out (>{AGE_GRACE_DAYS}d, {lb} BFC, >= {mult}x median Rs{med:,.0f})', x / med))
+                f'aged-out (>{AGE_GRACE_DAYS}d, {lb} BC, >= {mult}x median Rs{med:,.0f})', x / med))
         else:
             verdict[c] = 'MONITOR'
     # v2.2.0: daily kill cap - rank by ratio (worst first), kill top DAILY_KILL_CAP, defer rest to MONITOR
@@ -477,42 +477,42 @@ def decide(data, age, cstar, active, funnel_geo=None):
         cells = collections.defaultdict(list)
         for c in monitor: cells[(pool[c]['layer'], pool[c]['need'])].append(c)
         for _cell, mem in cells.items():
-            best = sorted(mem, key=lambda c: (-pool[c]['w7s'], cpbfc(pool[c])))[0]; keep.add(best)
+            best = sorted(mem, key=lambda c: (-pool[c]['w7s'], cpbc(pool[c])))[0]; keep.add(best)
         rest = [c for c in monitor if c not in keep]
         ws = [pool[c]['w7s'] for c in rest]
-        ineff = [(cpbfc(pool[c]) / med if (pool[c]['bfc'] and med) else 1.0) for c in rest]
+        ineff = [(cpbc(pool[c]) / med if (pool[c]['bc'] and med) else 1.0) for c in rest]
         def z(v, arr):
             mu = sum(arr) / len(arr) if arr else 0
             sd = (statistics.pstdev(arr) if len(arr) > 1 else 1) or 1
             return (v - mu) / sd
-        score = {c: z(pool[c]['w7s'], ws) - z((cpbfc(pool[c]) / med if (pool[c]['bfc'] and med) else 1.0), ineff) for c in rest}
+        score = {c: z(pool[c]['w7s'], ws) - z((cpbc(pool[c]) / med if (pool[c]['bc'] and med) else 1.0), ineff) for c in rest}
         for c in sorted(rest, key=lambda c: -score[c]):
             if len(keep) < POOL_CAP: keep.add(c)
         res['prune_cut'] = sorted([c for c in survivors if c not in keep], key=lambda c: pool[c]['w7s'])
-    # ---- weekly: geo budget (mature geo, 7-day cpbfc vs C*) ----
+    # ---- weekly: geo budget (mature geo, 7-day cpbc vs C*) ----
     if cstar:
         for g in MATURE_GEOS:
             wc = data.get(g, {})
-            gsp7 = sum(x['w7s'] for x in wc.values()); gbfc7 = sum(x.get('w7b', 0) for x in wc.values())
-            if gbfc7 >= GEO_BUDGET_BFC_GATE:
-                gcp = gsp7 / gbfc7
-                res['geo_budget'].append((g, 'SCALE' if gcp <= cstar else 'HOLD', gcp, gbfc7))
+            gsp7 = sum(x['w7s'] for x in wc.values()); gbc7 = sum(x.get('w7b', 0) for x in wc.values())
+            if gbc7 >= GEO_BUDGET_BC_GATE:
+                gcp = gsp7 / gbc7
+                res['geo_budget'].append((g, 'SCALE' if gcp <= cstar else 'HOLD', gcp, gbc7))
     # ---- weekly: non-Delhi geo 3-stage diagnostic (7-day spend gate) ----
     fg = funnel_geo or {}
     del_fg = fg.get('Delhi', {}); del_w7s = sum(x['w7s'] for x in data.get('Delhi', {}).values())
-    del_svc_check = del_fg.get('svc_check', 0); del_svc_true = del_fg.get('svc_true', 0); del_bfc = del_fg.get('bfc', 0)
+    del_svc_check = del_fg.get('svc_check', 0); del_svc_true = del_fg.get('svc_true', 0); del_bc = del_fg.get('bc', 0)
     del_cpsc  = (del_w7s / del_svc_check) if del_svc_check else None
     del_svc_rate  = (del_svc_true / del_svc_check) if del_svc_check else None
-    del_conv_rate = (del_bfc / del_svc_true) if del_svc_true else None
+    del_conv_rate = (del_bc / del_svc_true) if del_svc_true else None
     for g, gf in fg.items():
         if g in MATURE_GEOS: continue
         w7s = gf.get('w7s', 0)
         if w7s <= 0: continue   # not active in last 7 days
-        svc_check = gf.get('svc_check', 0); svc_true = gf.get('svc_true', 0); bfc = gf.get('bfc', 0)
+        svc_check = gf.get('svc_check', 0); svc_true = gf.get('svc_true', 0); bc = gf.get('bc', 0)
         if svc_check < GEO_CONV_INSTALLS: continue
         g_cpsc       = w7s / svc_check if svc_check else None
         g_svc_rate   = svc_true / svc_check if svc_check else None
-        g_conv_rate  = bfc / svc_true if svc_true else None
+        g_conv_rate  = bc / svc_true if svc_true else None
         flags = []
         if del_cpsc and g_cpsc and g_cpsc > GEO_CONV_MULT * del_cpsc:
             flags.append(f"cost/svc-check Rs{g_cpsc:,.0f} vs Delhi Rs{del_cpsc:,.0f} -> review campaign levers")
@@ -528,7 +528,7 @@ def decide(data, age, cstar, active, funnel_geo=None):
 
 def _row(c, lyr, need, lb, sp, x, reason=None):
     xs = f"{x:,.0f}" if x != float('inf') else 'inf'
-    base = f"   - `{c}` [{lyr}/{need}] {int(lb)} BFC, Rs{sp:,.0f}, CPBFC Rs{xs}"
+    base = f"   - `{c}` [{lyr}/{need}] {int(lb)} BC, Rs{sp:,.0f}, CPBC Rs{xs}"
     return base + (f" - {reason}" if reason else "")
 
 
@@ -551,7 +551,7 @@ def msg_daily(res, cstar, end, unacted=None):
     medlabel = "active-only median" if res['active_filter'] else "median (incl. paused)"
     if res['median']:
         head = (f":scales: *BFC-VOLUME daily kill + prune* ({end}, DEL BOOKNOW, lifetime)\n"
-                f"{medlabel} CPBFC Rs{res['median']:,.0f} | C* Rs{cstar:,.0f} | brake Rs{res['brake_spend']:,.0f} | pool {res['pool_n']}/{POOL_CAP}\n"
+                f"{medlabel} CPBC Rs{res['median']:,.0f} | C* Rs{cstar:,.0f} | brake Rs{res['brake_spend']:,.0f} | pool {res['pool_n']}/{POOL_CAP}\n"
                 f"_Decisions for review - read-only, pausing is a manual step in Ads Manager._")
     else:
         head = f":scales: *BFC-VOLUME daily kill + prune* ({end})"
@@ -559,9 +559,9 @@ def msg_daily(res, cstar, end, unacted=None):
     if unacted:
         lines.append(f":warning: *NOT ACTED UPON - yesterday's KILLs still ACTIVE ({len(unacted)})*")
         for reco in unacted:
-            x = reco.get('cpbfc')
+            x = reco.get('cpbc')
             xs = f"{x:,.0f}" if x is not None else 'inf'
-            lines.append(f"   - `{reco['concept_id']}` {reco.get('bfc', '?')} BFC, CPBFC Rs{xs} - still running, pause in Ads Manager")
+            lines.append(f"   - `{reco['concept_id']}` {reco.get('bc', '?')} BC, CPBC Rs{xs} - still running, pause in Ads Manager")
         lines.append("")
     if kills:
         lines.append(f"*KILL ({len(kills)})*")
@@ -603,12 +603,12 @@ def msg_weekly(res, cstar, start, end):
     lines = [f":memo: *BFC-VOLUME weekly review* ({start} to {end}, DEL BOOKNOW, 7-day)",
              "_Scale/isolate + structural geo layer. Daily handles kills/brake/prune._", integ, ""]
     if isos:
-        lines.append(f"*ISOLATE candidates* (<=0.7x median, >=12 BFC -> own ad set) ({len(isos)})")
+        lines.append(f"*ISOLATE candidates* (<=0.7x median, >=12 BC -> own ad set) ({len(isos)})")
         for (c, lyr, need, lb, sp, x) in isos: lines.append(_row(c, lyr, need, lb, sp, x, "break into own ad set"))
         lines.append("")
     if res['geo_budget']:
-        lines.append(f"*Geo budget* (7d CPBFC vs C* ~Rs{cstar:,.0f})" if cstar else "*Geo budget*")
-        for (g, a, cp, bf) in sorted(res['geo_budget']): lines.append(f"   - *{g}*: {a} - CPBFC Rs{cp:,.0f}, {int(bf)} BFC")
+        lines.append(f"*Geo budget* (7d CPBC vs C* ~Rs{cstar:,.0f})" if cstar else "*Geo budget*")
+        for (g, a, cp, bf) in sorted(res['geo_budget']): lines.append(f"   - *{g}*: {a} - CPBC Rs{cp:,.0f}, {int(bf)} BC")
         lines.append("")
     if res['geo_conv']:
         lines.append("*Geo diagnostic* (7d, vs Delhi benchmark)")

@@ -9,16 +9,18 @@ the day's decisions to **#growth-reports** (plus a DM copy) for one-click review
 ## What it does
 **Daily** (`--mode daily`, 07:00 IST): on the mature geo (Delhi), BOOKNOW-only, **lifetime** basis,
 **active-only median** (Meta `effective_status` filter), first-spend anchored:
-- **Efficiency kill** - CPBFC >= layer-multiplier x median (L1/L2 = 1.0x, L3 = 1.2x held), >=5 lifetime BFC.
-- **Zero-BFC kill** - 0 BFC and >= Rs10,000 lifetime spend.
-- **Cost-velocity brake** - spend >= max(5xC*, Rs15,000) and CPBFC >= 2x kill line -> KILL-REVIEW (human look).
-- **Daily kill cap** - if efficiency-kill candidates > 3, rank by CPBFC/median ratio (worst first) and cap at 3 per day. Rest roll to MONITOR.
+- **Efficiency kill** - CPBC >= layer-multiplier x median (L1/L2 = 1.0x, L3 = 1.2x held), >=5 lifetime BC.
+- **Zero-BC kill** - 0 BC and >= Rs10,000 lifetime spend.
+- **Cost-velocity brake** - spend >= max(5xC*, Rs15,000) and CPBC >= 2x kill line -> KILL-REVIEW (human look).
+- **Daily kill cap** - if efficiency-kill candidates > 3, rank by CPBC/median ratio (worst first) and cap at 3 per day. Rest roll to MONITOR.
 - **Top-spender warning** - if a KILL candidate is #1 or #2 by 7-day daily avg spend AND holds >10% of pool avg spend, the Slack verdict gets a "TOP SPENDER - scale replacement before pausing" label. No gate, operator decides.
 - **Pool-cap prune** - if the active pool > 15, cut the weakest (protect layer x need-state coverage, then rank by delivery-velocity minus inefficiency). No per-layer floor.
 
-**Weekly** (`--mode weekly`, Mon 07:00 IST): ISOLATE candidates (<=0.7x median, >=12 BFC) + geo budget (SCALE/HOLD vs C*) + geo conversion (CAP/CUT).
+**Weekly** (`--mode weekly`, Mon 07:00 IST): ISOLATE candidates (<=0.7x median, >=12 BC) + geo budget (SCALE/HOLD vs C*) + geo conversion (CAP/CUT).
 
-No calendar grace (the 5-BFC gate is the young-creative protection). If Meta is unavailable the run degrades to an all-eligible median and flags `active-filter OFF` rather than failing. All thresholds are constants at the top of `rule_pass.py`.
+No calendar grace within the first 7 days (the 5-BC gate is the young-creative protection); past that, AGE_GRACE_DAYS makes a thin, still-bad performer kill-eligible even below the gate. If Meta is unavailable the run degrades to an all-eligible median and flags `active-filter OFF` rather than failing. All thresholds are constants at the top of `rule_pass.py`.
+
+**Naming note:** this codebase historically labeled the booking metric "BFC" (CPBFC, 5-BFC gate, etc.) even though it has always computed against the `booking_confirmed` API field, never `booking_fee_captured` - the latter undercounts by ~3x since a booking-fee waiver took effect ~24 Jun 2026. Renamed to "BC"/"CPBC" throughout as of 2026-07-13 for clarity. **`BFC-VOLUME` is unrelated** - it's the literal Meta/Google campaign-family name and is never renamed.
 
 ## Run locally (reads `C:\credentials\.env`)
 ```

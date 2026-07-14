@@ -49,7 +49,7 @@ STEP_CADENCE_DAYS    = 1      # days between steps (was 3 - too slow when the ga
                                # large; Nikhil, 2026-07-13. Note this compounds fast at
                                # MAX_STEP_PCT=15%/step - see red flags in the same commit)
 STABILIZATION_DAYS   = 7      # days of read after gap cools to <= FAST_ITERATE_GAP
-MIN_BFC_FOR_CPBL     = 20     # min 7-day BFC to trust an ad set's CPBL without caveat
+MIN_BC_FOR_CPBL     = 20     # min 7-day BC to trust an ad set's CPBL without caveat
 PAUSE_CANDIDATE_MULT = 2.0    # flag a Meta source as a pause candidate at >= this x the best CPBL
 MONITORING_THRESH    = 0.20   # flag if metric moves >20% on both DoD and WoW
 DASH_BASE            = 'https://growth-portal.up.railway.app'
@@ -127,14 +127,14 @@ def get_efficiency_data(d1, lookback=6):
     attribution rows only populate `campaign` (ad_set is blank there), while
     UAC/DemandGen already collapse ad_set==campaign - campaign is the one join
     key that works for every Google campaign type.
-    Returns (meta_by_adset, google_by_campaign), each {name: {'spend':, 'bfc':}}.
+    Returns (meta_by_adset, google_by_campaign), each {name: {'spend':, 'bc':}}.
     """
     start = (d1 - datetime.timedelta(days=lookback)).isoformat()
     data = dget('/api/raw/days?' + urllib.parse.urlencode({'start': start, 'end': d1.isoformat()}))
     records = data.get('records', data) if isinstance(data, dict) else data
 
-    meta = collections.defaultdict(lambda: {'spend': 0.0, 'bfc': 0})
-    goog = collections.defaultdict(lambda: {'spend': 0.0, 'bfc': 0})
+    meta = collections.defaultdict(lambda: {'spend': 0.0, 'bc': 0})
+    goog = collections.defaultdict(lambda: {'spend': 0.0, 'bc': 0})
     for day in records:
         for r in day.get('meta_spend', []):
             if r.get('channel') == 'META':
@@ -143,11 +143,11 @@ def get_efficiency_data(d1, lookback=6):
                 goog[r.get('campaign_name')]['spend'] += float(r.get('spend') or 0)
         for r in day.get('attribution', []):
             camp = r.get('campaign') or ''
-            bfc = int(r.get('booking_confirmed') or 0)
+            bc = int(r.get('booking_confirmed') or 0)
             if 'GOOGLE' in camp.upper():
-                goog[camp]['bfc'] += bfc
+                goog[camp]['bc'] += bc
             else:
-                meta[r.get('ad_set')]['bfc'] += bfc
+                meta[r.get('ad_set')]['bc'] += bc
     return dict(meta), dict(goog)
 
 
@@ -305,9 +305,9 @@ def rank_meta_sources(meta_budgets, meta_eff):
     for name, d in meta_budgets.items():
         if d['type'] != 'BFC-VOLUME':
             continue
-        eff = meta_eff.get(name, {'spend': 0.0, 'bfc': 0})
-        cpbl = (eff['spend'] / eff['bfc']) if eff['bfc'] > 0 else None
-        rows.append({'name': name, 'budget': d['daily_budget'], 'cpbl': cpbl, 'bfc': eff['bfc']})
+        eff = meta_eff.get(name, {'spend': 0.0, 'bc': 0})
+        cpbl = (eff['spend'] / eff['bc']) if eff['bc'] > 0 else None
+        rows.append({'name': name, 'budget': d['daily_budget'], 'cpbl': cpbl, 'bc': eff['bc']})
     rows.sort(key=lambda r: (r['cpbl'] is None, -(r['cpbl'] or 0)))
     return rows
 
@@ -317,9 +317,9 @@ def rank_google_destinations(google_budgets, google_eff):
     fund a proven performer before an unknown one."""
     rows = []
     for name, d in google_budgets.items():
-        eff = google_eff.get(name, {'spend': 0.0, 'bfc': 0})
-        cpbl = (eff['spend'] / eff['bfc']) if eff['bfc'] > 0 else None
-        rows.append({'name': name, 'budget': d['daily_budget'], 'cpbl': cpbl, 'bfc': eff['bfc']})
+        eff = google_eff.get(name, {'spend': 0.0, 'bc': 0})
+        cpbl = (eff['spend'] / eff['bc']) if eff['bc'] > 0 else None
+        rows.append({'name': name, 'budget': d['daily_budget'], 'cpbl': cpbl, 'bc': eff['bc']})
     rows.sort(key=lambda r: (r['cpbl'] is None, r['cpbl'] if r['cpbl'] is not None else 0))
     return rows
 
@@ -337,7 +337,7 @@ def allocate(target_rs, ranked_rows):
         amount = min(cap, remaining)
         if amount <= 0.5:
             continue
-        allocations.append({'name': r['name'], 'amount': amount, 'cpbl': r['cpbl'], 'bfc': r['bfc']})
+        allocations.append({'name': r['name'], 'amount': amount, 'cpbl': r['cpbl'], 'bc': r['bc']})
         remaining -= amount
     return allocations, target_rs - remaining
 
@@ -427,7 +427,7 @@ def msg_trigger(gap, consecutive, meta_cpbl, google_cpbl, target_rs,
                   f'(CPBL >= {PAUSE_CANDIDATE_MULT:.0f}x your best BFC-VOLUME ad set - '
                   'consider pausing entirely rather than just trimming; advisory only, not sized above):']
         for r in pauses:
-            lines.append(f'  `{r["name"]}`  CPBL {fmt_cpbl(r["cpbl"])}  ({r["bfc"]} bookings/7d)')
+            lines.append(f'  `{r["name"]}`  CPBL {fmt_cpbl(r["cpbl"])}  ({r["bc"]} bookings/7d)')
 
     lines += [
         '',

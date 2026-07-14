@@ -47,23 +47,31 @@ platform - pause/scale stays a manual human step. "Kill fast, scale slow."
 ## 2. The framework AS RATIFIED (v2.2.0, post SD sign-off 1 Jul 2026)
 
 Basis for the daily pass: mature geo = Delhi, BOOKNOW-only, LIFETIME basis, active-only
-median (Meta `effective_status` filter), first-spend anchored, no calendar grace (the
-5-BFC gate is the young-creative protection). BFC metric = booking_confirmed (canonical,
-matches dashboard). NOTE: booking_fee_captured was used until 28 Jun and undercounted
+median (Meta `effective_status` filter), first-spend anchored, no calendar grace within
+the first 7 days (the 5-BC gate is the young-creative protection; past 7 days,
+AGE_GRACE_DAYS makes a still-thin, still-bad performer kill-eligible even below the
+gate - see v2.3.0 note below). BC metric = booking_confirmed (canonical, matches
+dashboard). NOTE: booking_fee_captured was used until 28 Jun and undercounted
 badly from ~23 Jun onwards - new app flow variants introduced around that date do not
 collect a booking fee, so fee-capture = 0 even when bookings happen. Do not use
 booking_fee_captured for any creative launched post 23 Jun.
 
+**Naming note (2026-07-13):** this doc and the code originally labeled this metric "BFC"
+(CPBFC, 5-BFC gate) even though the underlying field has always been `booking_confirmed`,
+never `booking_fee_captured` - renamed throughout to "BC"/"CPBC" for clarity. Occurrences
+of `BFC-VOLUME` / `BFC-VOL` (the Meta/Google campaign-family name) and `PBFC` (a literal
+ad-set naming convention) are unrelated and were NOT renamed.
+
 DAILY (07:00 IST):
-- Efficiency kill - CPBFC >= layer-multiplier x active median (L1/L2 = 1.0x, L3 = 1.2x
-  held), AND >= 5 lifetime BFC.
-- Zero-BFC kill - 0 BFC and >= Rs 10,000 lifetime spend.
-- Cost-velocity brake - spend >= max(5 x target-CPBL, Rs 15,000) AND CPBFC >= 2x the kill
-  line -> KILL-REVIEW (human look), regardless of BFC count. (This is the "Rs 40K hole"
+- Efficiency kill - CPBC >= layer-multiplier x active median (L1/L2 = 1.0x, L3 = 1.2x
+  held), AND >= 5 lifetime BC.
+- Zero-BC kill - 0 BC and >= Rs 10,000 lifetime spend.
+- Cost-velocity brake - spend >= max(5 x target-CPBL, Rs 15,000) AND CPBC >= 2x the kill
+  line -> KILL-REVIEW (human look), regardless of BC count. (This is the "Rs 40K hole"
   catch - stops a creative that collected 1-4 bookings at a terrible CPBL from running
   uncapped because it isn't yet efficiency-kill-eligible.)
 - Daily kill cap 3 - if efficiency-kill candidates exceed 3 in a single run, rank by
-  CPBFC ratio (worst-to-median ratio, highest first) and cap at 3 kills per day. Remaining
+  CPBC ratio (worst-to-median ratio, highest first) and cap at 3 kills per day. Remaining
   candidates roll to MONITOR and are re-evaluated the next day. Prevents batch-kill pool
   crashes (the Jun 22-23 event: 12 kills over 2 days collapsed the pool from 24 to 13 and
   drove a -47% spend trough). Empirical basis: all events with <= 4 kills were
@@ -80,7 +88,7 @@ DAILY (07:00 IST):
   decides; the pass does not block the action.
 
 WEEKLY (Mon 07:00 IST):
-- ISOLATE candidates - <= 0.7x median CPBL AND >= 12 BFC (recharge passes) -> own ad set /
+- ISOLATE candidates - <= 0.7x median CPBL AND >= 12 BC (recharge passes) -> own ad set /
   materially increase delivery. (In single-ad-set ABO, isolate is the ONLY creative-level
   scale lever.)
 - Geo budget - SCALE/HOLD vs target C*.
@@ -189,6 +197,16 @@ basis: retrospective analysis of DEL BFC-VOLUME kill history (Jun 8-29, 10 kill 
   the pool toward some minimum.
   Slack: #growth-reports (C0B9G0Q68G6) thread 1782712450.281269, SD reply 2026-07-01.
 
+CH-12 (13 Jul) - NAMING FIX: "BFC"/"CPBFC" renamed to "BC"/"CPBC" throughout rule_pass.py,
+budget_shift_pass.py, and this doc. The metric has always computed against
+booking_confirmed (never booking_fee_captured, per CH-10) - "BFC" was legacy naming that
+never got updated after CH-10's fix, confusing enough that it prompted a direct question
+about which field was actually being used. `BFC-VOLUME`/`BFC-VOL` (the Meta/Google
+campaign-family name) and `PBFC` (an ad-set naming convention) are unrelated and were NOT
+renamed. Historical kill_pass_log.json entries (Jun 26, Jul 8) keep their original
+"cpbfc"/"bfc" keys as a historical record; new entries use "cpbc"/"bc" going forward -
+not rewritten retroactively.
+
 ---
 
 ## 4. OPEN CALLS - yet to be aligned / ratified with SD
@@ -210,7 +228,7 @@ basis: retrospective analysis of DEL BFC-VOLUME kill history (Jun 8-29, 10 kill 
    the cascade exposed. RAISE WITH SD.
 
 4. DAY-3 CPI as a standing review flag (CH-6). Partially accepted as a flag, not an auto-kill;
-   CPI->CPBFC link only measured inside BFC-VOLUME (not CT) - confirm before wiring in.
+   CPI->CPBC link only measured inside BFC-VOLUME (not CT) - confirm before wiring in.
 
 5. SD's 13-question audit (CH-2) - several are standing-rule / automation candidates not yet
    all closed (verdict-to-execution lag tracking, "which decisions are you now making before
