@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Budget utilization pass -> Slack (DM only for now). v0.4
+"""Budget utilization pass -> Slack (DM only for now). v0.5
 
   For every active in-scope Meta ad set and Google campaign, compares
   yesterday's actual spend to its daily budget. Flags anything where
@@ -12,15 +12,22 @@
   v0.4: budget is reconstructed as of end-of-day d1, not read live. Live
   budget + a run scheduled close to midnight (00:15 IST) shrinks the edit
   window but doesn't close it, and a --date backtest or a delayed run still
-  compares old spend to a possibly-already-edited budget. Tried Google's
-  change_event API to reconstruct historical budgets automatically - tested
-  2026-07-12 three ways (scoped to the specific campaign, account-wide,
-  filtered by CAMPAIGN resource type) and it never surfaced a known,
-  confirmed campaign_budget edit; unreliable enough that automating on top
-  of it isn't worth it. Manually logged instead: see manual_budget_changes.csv
-  (append via log_budget_change.py) - get_budget_as_of() walks that log
-  backward from the live value, undoing any edit that happened after
-  23:59:59 IST on d1, to reconstruct what was actually in effect that day.
+  compares old spend to a possibly-already-edited budget. get_budget_as_of()
+  walks manual_budget_changes.csv backward from the live value, undoing any
+  edit that happened after 23:59:59 IST on d1, to reconstruct what was
+  actually in effect that day.
+
+  v0.5: that log is now auto-populated for Meta. Tried Google's change_event
+  API to reconstruct historical budgets automatically - tested 2026-07-12
+  three ways (scoped to the specific campaign, account-wide, filtered by
+  CAMPAIGN resource type) and it never surfaced a known, confirmed
+  campaign_budget edit; unreliable enough that automating on top of it isn't
+  worth it - Google stays manually logged via log_budget_change.py. Meta's
+  Activity Log, tested the same way 2026-07-15, DID reliably surface a known
+  edit (update_ad_set_budget, with old/new values) - so sync_meta_budget_changes()
+  queries it each run and auto-appends anything new to manual_budget_changes.csv,
+  deduped against existing entries. No manual reporting needed for Meta
+  budget changes going forward.
 
   For each flag, the drill-down answers "what changed" rather than just
   "what's biggest": each creative (Meta) / network (Google) is compared
@@ -52,7 +59,7 @@ Env (Actions secrets / local C:\\credentials\\.env):
       GOOGLE_ADS_CLIENT_SECRET, GOOGLE_ADS_REFRESH_TOKEN,
       GOOGLE_ADS_CUSTOMER_ID, SLACK_BOT_TOKEN
 """
-import sys, os, csv, json, argparse, datetime, collections, urllib.request, urllib.parse
+import sys, os, csv, json, calendar, argparse, datetime, collections, urllib.request, urllib.parse
 
 from budget_shift_pass import (  # also sets sys.stdout to a utf-8 TextIOWrapper
     load_env, slack_api, get_meta_budgets, get_google_budgets,
@@ -107,6 +114,100 @@ def get_budget_as_of(platform, name, d1, current_budget, changes):
         else:
             break
     return budget
+
+
+# ---- Meta budget-change auto-sync (Meta's Activity Log is reliable for this -
+# confirmed 2026-07-15 against a known edit; Google's change_event is NOT,
+# tested 2026-07-12 three ways and never surfaced a confirmed campaign_budget
+# change - Google stays manually logged via log_budget_change.py) ----
+
+def get_meta_activity_budget_changes(meta_budgets, lookback_days=3):
+    """
+    Queries the Meta Ad Account Activity Log for update_ad_set_budget events
+    in the last `lookback_days` (a few days of overlap tolerates a missed
+    run), scoped to currently in-scope ad sets. Returns a list of change
+    dicts: {timestamp (IST, aware), platform:'meta', entity_name,
+    old_budget, new_budget}.
+    """
+    tok = os.environ.get('META_ACCESS_TOKEN')
+    if not tok: return []
+    acc = 'act_' + os.environ.get('META_AD_ACCOUNT_ID', META_ACC_DEFAULT).replace('act_', '')
+    ver = os.environ.get('META_API_VERSION', META_VER_DEFAULT)
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    since = calendar.timegm((now_utc - datetime.timedelta(days=lookback_days)).timetuple())
+    until = calendar.timegm(now_utc.timetuple())
+    params = {
+        'since': since, 'until': until, 'limit': 200,
+        'fields': 'event_type,event_time,object_name,extra_data',
+        'access_token': tok,
+    }
+    url = f'https://graph.facebook.com/{ver}/{acc}/activities?' + urllib.parse.urlencode(params)
+    changes = []
+    while url:
+        with urllib.request.urlopen(url, timeout=60) as r:
+            resp = json.loads(r.read().decode())
+        for a in resp.get('data', []):
+            if a.get('event_type') != 'update_ad_set_budget':
+                continue
+            name = a.get('object_name')
+            if name not in meta_budgets:
+                continue
+            try:
+                extra = json.loads(a.get('extra_data') or '{}')
+                old_v = extra.get('old_value', {}).get('old_value')
+                new_v = extra.get('new_value', {}).get('new_value')
+                if old_v is None or new_v is None:
+                    continue
+                old_budget = float(old_v) / 100
+                new_budget = float(new_v) / 100
+            except Exception:
+                continue
+            et = a.get('event_time', '')
+            try:
+                ts_utc = datetime.datetime.strptime(et[:19], '%Y-%m-%dT%H:%M:%S').replace(tzinfo=datetime.timezone.utc)
+                ts_ist = ts_utc.astimezone(IST)
+            except Exception:
+                continue
+            changes.append({
+                'timestamp': ts_ist, 'platform': 'meta', 'entity_name': name,
+                'old_budget': old_budget, 'new_budget': new_budget,
+            })
+        url = (resp.get('paging') or {}).get('next')
+    return changes
+
+
+def sync_meta_budget_changes(meta_budgets):
+    """
+    Appends any new Meta update_ad_set_budget events to manual_budget_changes.csv,
+    deduped against what's already logged (same entity/old/new budget on the
+    same calendar day - handles a manually-logged entry for the same edit
+    without double-counting, while still allowing a genuine repeat transition
+    on a different day). Returns the list of newly-appended entries.
+    """
+    detected = get_meta_activity_budget_changes(meta_budgets)
+    if not detected:
+        return []
+    existing = load_manual_changes()
+    existing_keys = {
+        (c['platform'], c['entity_name'], round(c['old_budget']), round(c['new_budget']), c['timestamp'].date())
+        for c in existing
+    }
+    new_rows = [c for c in detected
+                if ('meta', c['entity_name'], round(c['old_budget']), round(c['new_budget']), c['timestamp'].date())
+                not in existing_keys]
+    if new_rows:
+        write_header = not os.path.exists(MANUAL_CHANGES_PATH) or os.path.getsize(MANUAL_CHANGES_PATH) == 0
+        with open(MANUAL_CHANGES_PATH, 'a', newline='', encoding='utf-8') as f:
+            w = csv.writer(f)
+            if write_header:
+                w.writerow(['timestamp_ist', 'platform', 'entity_name', 'old_budget', 'new_budget', 'changed_by', 'note'])
+            for c in new_rows:
+                w.writerow([
+                    c['timestamp'].isoformat(), 'meta', c['entity_name'],
+                    f"{c['old_budget']:.0f}", f"{c['new_budget']:.0f}",
+                    'Meta Activity Log (auto)', 'Auto-detected via update_ad_set_budget event',
+                ])
+    return new_rows
 
 
 # ---- Meta: today's spend per ad set + ad-level history for contributor analysis ----
@@ -368,6 +469,12 @@ def main():
     meta_budgets   = get_meta_budgets()
     google_budgets = get_google_budgets()
     meta_today_by_adset, meta_hist = get_meta_spend_window(d1)
+
+    new_meta_changes = sync_meta_budget_changes(meta_budgets)
+    if new_meta_changes:
+        print(f'auto-logged {len(new_meta_changes)} Meta budget change(s) from the Activity Log:')
+        for c in new_meta_changes:
+            print(f"  {c['entity_name']}  {c['old_budget']:,.0f} -> {c['new_budget']:,.0f}  @ {c['timestamp'].isoformat()}")
     manual_changes = load_manual_changes()
 
     meta_flags   = []
