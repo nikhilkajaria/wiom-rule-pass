@@ -1,3 +1,9 @@
 timestamp_ist,platform,entity_name,old_budget,new_budget,changed_by,note
 2026-07-12T00:47:11+05:30,google,GOOGLE_BA_DEL_SCALE_ABO_UAC_BFC-VOLUME_010626,54000,62000,Guneet Singh,Per #growth-reports thread 2026-07-11; funded from pausing 4 low-efficiency Bharat city ad sets on Meta
 2026-07-12T00:47:11+05:30,google,GOOGLE_BA_DEL_SCALE_ABO_SEARCH_BRAND_01072026,1500,2000,Guneet Singh,Per #growth-reports thread 2026-07-11; funded from pausing 4 low-efficiency Bharat city ad sets on Meta
+2026-07-15T00:20:00+05:30,meta,DEL_ALL_BFC_L0-L1-L2_RMKT-VV75-MAST90_BOOKNOW_APPSTORE_ABO_RETARGETING_MULTI_NA,22500,19500,Nikhil Kajaria,"Shift distribution per capacity-reconciliation design (Search L2 excluded, Search Brand funded +15%)"
+2026-07-15T00:20:00+05:30,meta,BHARAT_ALL_SPL_L1-L2-L3_BROAD_MULTI_APPSTORE_ABO_BFC-VOLUME_MULTI_NA,10000,8500,Nikhil Kajaria,"Shift distribution per capacity-reconciliation design (Search L2 excluded, Search Brand funded +15%)"
+2026-07-15T00:20:00+05:30,meta,DEL_ALL_PBFC_L1-L2-L3_BROAD_MULTI_APPSTORE_ABO_BFC-VOLUME_MULTI_NA,47000,41000,Nikhil Kajaria,"Shift distribution per capacity-reconciliation design (Search L2 excluded, Search Brand funded +15%)"
+2026-07-15T00:20:00+05:30,google,GOOGLE_BA_DEL_SCALE_ABO_UAC_BFC-VOLUME_010626,62000,71000,Nikhil Kajaria,"Shift distribution per capacity-reconciliation design (Search L2 excluded, Search Brand funded +15%)"
+2026-07-15T00:20:00+05:30,google,GOOGLE_BA_DEL_SCALE_ABO_DEMANDGEN_YT_BFC_VOLUME_10062026,5000,5750,Nikhil Kajaria,"Shift distribution per capacity-reconciliation design (Search L2 excluded, Search Brand funded +15%)"
+2026-07-15T00:20:00+05:30,google,GOOGLE_BA_DEL_SCALE_ABO_SEARCH_BRAND_01072026,2000,2300,Nikhil Kajaria,"Shift distribution per capacity-reconciliation design (Search L2 excluded, Search Brand funded +15%)"
