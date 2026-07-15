@@ -72,5 +72,59 @@
         "action_timing": null
       }
     ]
+  },
+  {
+    "date": "2026-07-14",
+    "median_cpbc": 1288.97,
+    "recos": [
+      {
+        "concept_id": "JUN26-C-076",
+        "layer": "L2",
+        "need": "MCR",
+        "verdict": "KILL",
+        "reason": "aged-out (>7d, 2 BC, >= 1.0x median Rs1,289)",
+        "cpbc": 3653.7,
+        "bc": 2,
+        "spend": 7307.4,
+        "median_at_time": 1288.97,
+        "ad_ids": [
+          "120250268868760343"
+        ],
+        "action_taken": null,
+        "action_timing": null
+      },
+      {
+        "concept_id": "JUN26-C-077",
+        "layer": "L3",
+        "need": "L3-MULTI",
+        "verdict": "KILL",
+        "reason": "aged-out (>7d, 2 BC, >= 1.2x median Rs1,289)",
+        "cpbc": 3164.46,
+        "bc": 2,
+        "spend": 6328.92,
+        "median_at_time": 1288.97,
+        "ad_ids": [
+          "120250268878150343"
+        ],
+        "action_taken": null,
+        "action_timing": null
+      },
+      {
+        "concept_id": "JUN26-C-079",
+        "layer": "L3",
+        "need": "L3-MULTI",
+        "verdict": "KILL",
+        "reason": "aged-out (>7d, 2 BC, >= 1.2x median Rs1,289)",
+        "cpbc": 2149.94,
+        "bc": 2,
+        "spend": 4299.89,
+        "median_at_time": 1288.97,
+        "ad_ids": [
+          "120250078842730343"
+        ],
+        "action_taken": null,
+        "action_timing": null
+      }
+    ]
   }
 ]
