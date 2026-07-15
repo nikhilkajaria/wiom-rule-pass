@@ -398,7 +398,7 @@ def compute(d1):
         wr = dget('/api/war_room?' + urllib.parse.urlencode({'start': metric_start, 'end': d1.isoformat()}))
         days = wr.get('days', wr) if isinstance(wr, dict) else wr
         tot = sum(d.get('bookings') or 0 for d in days)
-        paid = sum((d.get('meta_bc') or 0) + (d.get('google_bc') or 0) for d in days)
+        paid = sum((d.get('meta_bfc') or 0) + (d.get('google_bfc') or 0) for d in days)  # external growth-dashboard field names - NOT renamed
         if paid: cstar = BLENDED_TARGET * tot / paid
     except Exception: pass
     return data, age, cstar, dict(funnel_geo)

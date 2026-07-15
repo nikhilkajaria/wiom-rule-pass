@@ -16,6 +16,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Configure git for the internal log commit (rule_pass.py's git_commit_log())
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
       - name: Run daily kill + prune pass and post to Slack (#growth-reports + DM)
         run: python rule_pass.py --mode daily
         env:
