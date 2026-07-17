@@ -1,47 +1,5 @@
 {
-  "phase": "shift",
-  "shift": {
-    "initiated_date": "2026-07-12",
-    "step": 2,
-    "meta_allocations": [
-      {
-        "name": "DEL_ALL_BFC_L0-L1-L2_RMKT-VV75-MAST90_BOOKNOW_APPSTORE_ABO_RETARGETING_MULTI_NA",
-        "amount": 3000,
-        "cpbl": 1284
-      },
-      {
-        "name": "BHARAT_ALL_SPL_L1-L2-L3_BROAD_MULTI_APPSTORE_ABO_BFC-VOLUME_MULTI_NA",
-        "amount": 1500,
-        "cpbl": 1298
-      },
-      {
-        "name": "DEL_ALL_PBFC_L1-L2-L3_BROAD_MULTI_APPSTORE_ABO_BFC-VOLUME_MULTI_NA",
-        "amount": 6000,
-        "cpbl": 1033
-      }
-    ],
-    "google_allocations": [
-      {
-        "name": "GOOGLE_BA_DEL_SCALE_ABO_UAC_BFC-VOLUME_010626",
-        "amount": 9000,
-        "cpbl": 684
-      },
-      {
-        "name": "GOOGLE_BA_DEL_SCALE_ABO_DEMANDGEN_YT_BFC_VOLUME_10062026",
-        "amount": 750,
-        "cpbl": 866
-      },
-      {
-        "name": "GOOGLE_BA_DEL_SCALE_ABO_SEARCH_BRAND_01072026",
-        "amount": 300,
-        "cpbl": 1102
-      }
-    ],
-    "trigger_gap_pct": 35.1,
-    "last_step_date": "2026-07-15",
-    "last_step_time": "2026-07-15T00:20:00+05:30",
-    "next_step_date": "2026-07-16",
-    "note": "Manual execution per capacity-reconciliation design discussed in session (2026-07-13/14): gap-driven headline target (gap/2, uncapped by 15%) reconciled against real per-unit capacity on both sides - sourced worst-CPBL-first from ALL Meta ad sets (Retargeting now eligible), funded best-CPBL-first into Google campaigns confirmed budget-constrained (Search L2 excluded - 0% impression share lost to budget on the 2 most recent days, rank-constrained instead; Search L1/P2 excluded as worse-CPBL than the Meta sources). Executed amounts rounded slightly vs the exact recommendation (e.g. Retargeting -3,000 vs recommended -3,375; DEL_ALL_PBFC -6,000 vs recommended -5,475) - Nikhil's own rounding, not a script output."
-  },
-  "stabilization_end": null
+  "phase": "stabilization",
+  "shift": null,
+  "stabilization_end": "2026-07-21"
 }
