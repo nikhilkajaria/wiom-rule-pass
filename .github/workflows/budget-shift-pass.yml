@@ -1,12 +1,13 @@
 name: Daily Budget Shift Pass
 
-# Runs 30 min after the kill pass (06:30 UTC = 12:00 IST).
+# 08:00 UTC = 13:30 IST. Moved from 11:45 IST 2026-07-15, alongside the kill
+# pass - growth dashboard data takes longer to load than originally estimated.
 # Checks 7-day rolling Meta vs Google CPBL, triggers a shift recommendation
 # if the gap > 10% for 3 consecutive days. Read-only: posts to Slack,
 # human approves and executes. Never writes to any ad platform.
 on:
   schedule:
-    - cron: '15 6 * * *'
+    - cron: '0 8 * * *'
   workflow_dispatch: {}
 
 jobs:

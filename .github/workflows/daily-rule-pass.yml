@@ -2,10 +2,11 @@ name: Daily BFC-VOLUME rule-pass
 
 # Runs after the morning ETL and DMs the flagged kills to Slack.
 # GitHub Actions cron is UTC and can be delayed a few minutes under load.
-# 06:00 UTC = 11:30 IST. Ensure the ETL completes before 11:30 IST.
+# 08:00 UTC = 13:30 IST. Moved from 11:30 IST 2026-07-15 - growth dashboard
+# data takes longer to load than originally estimated.
 on:
   schedule:
-    - cron: '0 6 * * *'
+    - cron: '0 8 * * *'
   workflow_dispatch: {}        # lets you trigger a manual run from the Actions tab
 
 jobs:

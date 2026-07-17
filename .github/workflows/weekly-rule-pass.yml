@@ -2,11 +2,12 @@ name: Weekly BFC-VOLUME review
 
 # The batched weekly edit (the core L1 + L3 rhythm, done together). Routine creative/geo edits
 # happen here, not daily - trickling daily changes resets Meta's learning phase.
-# Cron is UTC. '0 6 * * 1' = Monday 11:30 IST - same time of day as the daily
-# rule-pass (daily-rule-pass.yml), just weekly instead of daily.
+# Cron is UTC. '0 8 * * 1' = Monday 13:30 IST - same time of day as the daily
+# rule-pass (daily-rule-pass.yml), just weekly instead of daily. Moved from
+# 11:30 IST 2026-07-15 alongside the daily pass.
 on:
   schedule:
-    - cron: '0 6 * * 1'
+    - cron: '0 8 * * 1'
   workflow_dispatch: {}
 
 jobs:

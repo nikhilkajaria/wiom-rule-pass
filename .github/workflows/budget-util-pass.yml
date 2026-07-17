@@ -1,7 +1,7 @@
 name: Daily Budget Utilization Pass
 
-# 00:15 IST (18:45 UTC, previous calendar day) - deliberately close to midnight,
-# not the same slot as the other passes (11:45 IST). Spend and budget are both
+# 00:10 IST (18:40 UTC, previous calendar day) - deliberately close to midnight,
+# not the same slot as the other passes (13:30 IST). Spend and budget are both
 # pulled directly from Meta/Google (no growth-dashboard dependency). Running
 # this close to the spend day's close minimizes the window in which a human
 # budget edit between day-close and the check could make spend (from before
@@ -14,7 +14,7 @@ name: Daily Budget Utilization Pass
 # platform.
 on:
   schedule:
-    - cron: '45 18 * * *'
+    - cron: '40 18 * * *'
   workflow_dispatch: {}
 
 jobs:
