@@ -649,6 +649,9 @@ def main():
     ap.add_argument('--dry-run', action='store_true', help='print the message, do not post or write log')
     ap.add_argument('--dm-only', action='store_true', help='post to the DM copy only (testing), skip the channel')
     ap.add_argument('--date', help='override D-1 anchor YYYY-MM-DD (default = yesterday IST)')
+    ap.add_argument('--last-retry', action='store_true',
+                     help='final scheduled attempt of the day - alert if dashboard data is still not ready, '
+                          'instead of quietly postponing to the next retry')
     args = ap.parse_args()
     load_env()
     if args.date:
@@ -656,6 +659,36 @@ def main():
     else:
         now_ist = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=5, minutes=30)
         d1 = (now_ist - datetime.timedelta(days=1)).date()
+
+    # Dashboard-readiness gate (v2.4.0, 2026-07-17): only for real, unattended
+    # scheduled runs - a --dry-run preview or a --date backtest is an
+    # intentional manual action, not subject to the retry schedule. Skipped
+    # for --mode weekly too (not part of this request; the weekly review's
+    # own schedule is unchanged). See dashboard_readiness.py for why (D-1
+    # data has been landing at erratic times, once crashed a run outright)
+    # and daily-rule-pass.yml for the 13:30/15:30/17:30 IST retry triggers.
+    if args.mode == 'daily' and not args.dry_run and not args.date:
+        from dashboard_readiness import is_dashboard_data_ready, already_completed_today, mark_completed_today
+        if already_completed_today('rule_pass', d1):
+            print(f'already completed for {d1} - skipping (idempotent retry guard)')
+            return
+        ready, dash_total, actual_total = is_dashboard_data_ready(d1)
+        if not ready:
+            dash_s = f"Rs{dash_total:,.0f}" if dash_total is not None else 'n/a'
+            act_s = f"Rs{actual_total:,.0f}" if actual_total is not None else 'n/a'
+            if args.last_retry:
+                token = os.environ.get('SLACK_BOT_TOKEN')
+                if token:
+                    slack_post(
+                        f":rotating_light: *BFC-VOLUME daily kill+prune* - dashboard data for {d1} still "
+                        f"incomplete after 3 attempts (dashboard spend {dash_s} vs actual Meta+Google spend {act_s}). "
+                        f"Pass did NOT run today - check the dashboard ETL.",
+                        dm_only=False)
+                print(f'last retry - data still not ready for {d1} (dashboard={dash_s}, actual={act_s}) - alerted, giving up for today')
+            else:
+                print(f'dashboard data not ready for {d1} (dashboard={dash_s}, actual={act_s}) - postponing to next retry')
+            return
+
     start = (d1 - datetime.timedelta(days=WINDOW_DAYS - 1)).isoformat(); end = d1.isoformat()
     data, age, cstar, funnel_geo = compute(d1)
     active, ad_ids_map = meta_active_del()
@@ -679,6 +712,10 @@ def main():
     msg = msg_daily(res, cstar, end, unacted=unacted) if args.mode == 'daily' else msg_weekly(res, cstar, start, end)
     if args.dry_run: print(msg)
     else: slack_post(msg, dm_only=args.dm_only)
+
+    if args.mode == 'daily' and not args.dry_run and not args.date:
+        from dashboard_readiness import mark_completed_today
+        mark_completed_today('rule_pass', d1)  # after the post succeeds, so a crash mid-run allows retry
 
 
 if __name__ == '__main__':

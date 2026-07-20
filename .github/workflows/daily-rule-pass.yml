@@ -2,11 +2,27 @@ name: Daily BFC-VOLUME rule-pass
 
 # Runs after the morning ETL and DMs the flagged kills to Slack.
 # GitHub Actions cron is UTC and can be delayed a few minutes under load.
-# 08:00 UTC = 13:30 IST. Moved from 11:30 IST 2026-07-15 - growth dashboard
-# data takes longer to load than originally estimated.
+#
+# 3-attempt retry (2026-07-17): D-1 dashboard data has been landing at
+# erratic times clustered around 1-1:30 PM and 3-3:30 PM IST, and it
+# crashed a run once - so instead of one fixed time, this checks dashboard
+# readiness (see dashboard_readiness.py) at three points and only actually
+# runs once data looks complete:
+#   08:00 UTC = 13:30 IST - attempt 1
+#   10:00 UTC = 15:30 IST - attempt 2
+#   12:00 UTC = 17:30 IST - attempt 3 (last retry - alerts instead of
+#                            quietly postponing if data is still not ready)
+# Each attempt is the SAME script re-run from scratch; rule_pass.py's own
+# idempotency guard (pass_readiness_state.json) skips a no-op if an earlier
+# attempt already completed successfully for today's D-1. Which attempt this
+# is gets read from github.event.schedule (the exact cron string that fired
+# this run) rather than the current clock time, so a delayed run still gets
+# classified correctly.
 on:
   schedule:
     - cron: '0 8 * * *'
+    - cron: '0 10 * * *'
+    - cron: '0 12 * * *'
   workflow_dispatch: {}        # lets you trigger a manual run from the Actions tab
 
 jobs:
@@ -17,14 +33,49 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          pip install google-ads google-auth
       - name: Configure git for the internal log commit (rule_pass.py's git_commit_log())
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
+      - name: Determine retry attempt
+        id: retry
+        run: |
+          case "${{ github.event.schedule }}" in
+            "0 8 * * *")  echo "flag=" >> "$GITHUB_OUTPUT" ;;
+            "0 10 * * *") echo "flag=" >> "$GITHUB_OUTPUT" ;;
+            "0 12 * * *") echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;
+            *)            echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;  # workflow_dispatch (manual) - one shot, alert if not ready
+          esac
       - name: Run daily kill + prune pass and post to Slack (#growth-reports + DM)
-        run: python rule_pass.py --mode daily
+        run: python rule_pass.py --mode daily ${{ steps.retry.outputs.flag }}
         env:
           WIOM_DASHBOARD_TOKEN: ${{ secrets.WIOM_DASHBOARD_TOKEN }}
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+          META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
+          GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
+          GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}
+          GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}
+          GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}
+          GOOGLE_ADS_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_CUSTOMER_ID }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           # SLACK_CHANNEL_ID defaults to #growth-reports (C0B9G0Q68G6); SLACK_DM_USER_ID to U05A9037VFG. Override here only if they change.
+      - name: Commit readiness state (idempotency marker)
+        # A "not ready, postponed" attempt never writes this file - only commit
+        # if it exists and actually changed, so a routine postponement never
+        # fails this step (and the job) over a missing/unchanged file. This
+        # push is what lets a LATER attempt's fresh checkout (separate runner,
+        # no memory of earlier attempts) see that an earlier one already
+        # completed today.
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          if [ -f pass_readiness_state.json ]; then
+            git add pass_readiness_state.json
+            if ! git diff --cached --quiet; then
+              git commit -m "readiness state: $(date -u +%Y-%m-%d)"
+              git push
+            fi
+          fi

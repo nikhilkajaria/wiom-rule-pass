@@ -1,13 +1,29 @@
 name: Daily Budget Shift Pass
 
-# 08:00 UTC = 13:30 IST. Moved from 11:45 IST 2026-07-15, alongside the kill
-# pass - growth dashboard data takes longer to load than originally estimated.
+# 3-attempt retry (2026-07-17): D-1 dashboard data has been landing at
+# erratic times clustered around 1-1:30 PM and 3-3:30 PM IST, and it
+# crashed a rule-pass run once - so instead of one fixed time, this checks
+# dashboard readiness (see dashboard_readiness.py) at three points and only
+# actually runs once data looks complete:
+#   08:00 UTC = 13:30 IST - attempt 1
+#   10:00 UTC = 15:30 IST - attempt 2
+#   12:00 UTC = 17:30 IST - attempt 3 (last retry - alerts instead of
+#                            quietly postponing if data is still not ready)
+# Each attempt is the SAME script re-run from scratch; budget_shift_pass.py's
+# own idempotency guard (pass_readiness_state.json) skips a no-op if an
+# earlier attempt already completed successfully for today's D-1. Which
+# attempt this is gets read from github.event.schedule (the exact cron
+# string that fired this run) rather than the current clock time, so a
+# delayed run still gets classified correctly.
+#
 # Checks 7-day rolling Meta vs Google CPBL, triggers a shift recommendation
 # if the gap > 10% for 3 consecutive days. Read-only: posts to Slack,
 # human approves and executes. Never writes to any ad platform.
 on:
   schedule:
     - cron: '0 8 * * *'
+    - cron: '0 10 * * *'
+    - cron: '0 12 * * *'
   workflow_dispatch: {}
 
 jobs:
@@ -26,8 +42,18 @@ jobs:
         run: |
           pip install google-ads google-auth requests python-dotenv
 
+      - name: Determine retry attempt
+        id: retry
+        run: |
+          case "${{ github.event.schedule }}" in
+            "0 8 * * *")  echo "flag=" >> "$GITHUB_OUTPUT" ;;
+            "0 10 * * *") echo "flag=" >> "$GITHUB_OUTPUT" ;;
+            "0 12 * * *") echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;
+            *)            echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;  # workflow_dispatch (manual) - one shot, alert if not ready
+          esac
+
       - name: Run budget shift pass
-        run: python budget_shift_pass.py --dm-only
+        run: python budget_shift_pass.py --dm-only ${{ steps.retry.outputs.flag }}
         env:
           WIOM_DASHBOARD_TOKEN: ${{ secrets.WIOM_DASHBOARD_TOKEN }}
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
@@ -42,9 +68,14 @@ jobs:
           # SLACK_DM_USER_ID defaults to U05A9037VFG (Nikhil)
 
       - name: Commit updated state + log
+        # A "not ready, postponed" attempt only ever touches pass_readiness_state.json
+        # (if it exits before ever reaching the shift logic, not even that) - guard
+        # each path's existence so a routine postponement never fails this step.
         run: |
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
-          git add budget_shift_state.json budget_shift_log.csv
+          for f in budget_shift_state.json budget_shift_log.csv pass_readiness_state.json; do
+            [ -f "$f" ] && git add "$f"
+          done
           git diff --cached --quiet || git commit -m "budget-shift-pass: update state + log $(date -u +%Y-%m-%d)"
-          git push
+          git push  # safe/idempotent - no-ops ("Everything up-to-date") if nothing new was committed

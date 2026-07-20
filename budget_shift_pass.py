@@ -580,6 +580,9 @@ def main():
     ap.add_argument('--dm-only', action='store_true')
     ap.add_argument('--date', help='override anchor date YYYY-MM-DD')
     ap.add_argument('--reset', action='store_true', help='clear shift state and exit')
+    ap.add_argument('--last-retry', action='store_true',
+                     help='final scheduled attempt of the day - alert if dashboard data is still not ready, '
+                          'instead of quietly postponing to the next retry')
     args = ap.parse_args()
     load_env()
 
@@ -590,7 +593,7 @@ def main():
 
     # Proxy for "when the action was taken": the script only knows when IT ran,
     # not when the human actually applied the change on Meta/Google. Automated
-    # cron runs land ~11:45 IST (pre-noon -> D1). If the real execution happens
+    # cron runs land ~13:30 IST (pre-noon -> D1). If the real execution happens
     # later in the day, hand-edit `last_step_time` in budget_shift_state.json
     # before the next run to get the correct D0/D1 classification.
     run_time_ist = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=5, minutes=30)
@@ -598,6 +601,32 @@ def main():
         d1 = datetime.date.fromisoformat(args.date)
     else:
         d1 = (run_time_ist - datetime.timedelta(days=1)).date()
+
+    # Dashboard-readiness gate (v2.1, 2026-07-17) - see dashboard_readiness.py
+    # for why and daily-rule-pass.yml/budget-shift-pass.yml for the
+    # 13:30/15:30/17:30 IST retry triggers. Skipped for --dry-run/--date -
+    # those are intentional manual actions, not the unattended schedule.
+    if not args.dry_run and not args.date:
+        from dashboard_readiness import is_dashboard_data_ready, already_completed_today, mark_completed_today
+        if already_completed_today('budget_shift_pass', d1):
+            print(f'already completed for {d1} - skipping (idempotent retry guard)')
+            return
+        ready, dash_total, actual_total = is_dashboard_data_ready(d1)
+        if not ready:
+            dash_s = f"Rs{dash_total:,.0f}" if dash_total is not None else 'n/a'
+            act_s = f"Rs{actual_total:,.0f}" if actual_total is not None else 'n/a'
+            if args.last_retry:
+                token = os.environ.get('SLACK_BOT_TOKEN')
+                if token:
+                    slack_post(
+                        f":rotating_light: *Budget Shift Pass* - dashboard data for {d1} still incomplete "
+                        f"after 3 attempts (dashboard spend {dash_s} vs actual Meta+Google spend {act_s}). "
+                        f"Pass did NOT run today - check the dashboard ETL.",
+                        dm_only=args.dm_only)
+                print(f'last retry - data still not ready for {d1} (dashboard={dash_s}, actual={act_s}) - alerted, giving up for today')
+            else:
+                print(f'dashboard data not ready for {d1} (dashboard={dash_s}, actual={act_s}) - postponing to next retry')
+            return
 
     state = load_state()
     war_room = get_war_room(d1)
@@ -693,6 +722,9 @@ def main():
     print(msg)
     if not args.dry_run:
         slack_post(msg, dm_only=args.dm_only)
+        if not args.date:
+            from dashboard_readiness import mark_completed_today
+            mark_completed_today('budget_shift_pass', d1)  # after the post succeeds, so a crash mid-run allows retry
 
 
 if __name__ == '__main__':
