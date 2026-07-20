@@ -4,12 +4,13 @@
   Runs daily after kill pass (07:30 IST). Checks 7-day rolling Branch-attributed
   CPBL per channel (Meta vs Google). Trigger: gap > 10% for 3 consecutive days.
 
-  Tiered stabilization (v2.0, per Guneet/Nikhil alignment 2026-07-11):
-    - gap <= 15% ("FAST_ITERATE_GAP"): safe to settle - full 7-day stabilization,
+  Tiered stabilization (v2.0, per Guneet/Nikhil alignment 2026-07-11;
+  fast-iterate threshold tightened 15% -> 10% per Nikhil 2026-07-20):
+    - gap <= 10% ("FAST_ITERATE_GAP"): safe to settle - full 7-day stabilization,
       no new shifts until it completes.
-    - gap  > 15% for 3 consecutive days: don't wait - keep iterating every
+    - gap  > 10% for 3 consecutive days: don't wait - keep iterating every
       3 days. This ALSO breaks an active stabilization early if the gap
-      re-widens past 15% for 3 days while parked (the exact gap that let the
+      re-widens past 10% for 3 days while parked (the exact gap that let the
       Jul 8-10 gap run unaddressed through a stale stabilization window).
 
   Sizing (v2.0): each step's total move is a channel-level ceiling
@@ -46,7 +47,8 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='repla
 
 # ---- spec constants (v2.0) ----
 TRIGGER_GAP          = 0.10   # channel CPBL gap threshold to consider any shift
-FAST_ITERATE_GAP     = 0.15   # above this, don't wait out stabilization - keep iterating
+FAST_ITERATE_GAP     = 0.10   # above this, don't wait out stabilization - keep iterating
+                               # (was 0.15 - tightened 2026-07-20, Nikhil)
 TRIGGER_DAYS         = 3      # consecutive days above threshold to fire/override
 MAX_STEP_PCT         = 0.15   # max budget change per step, PER ad set/campaign (both sides)
 STEP_CADENCE_DAYS    = 1      # days between steps (was 3 - too slow when the gap is this
@@ -256,7 +258,7 @@ def check_trigger(war_room, d1):
 
 
 def check_fast_iterate(war_room, d1):
-    """Override: gap > FAST_ITERATE_GAP(15%) for TRIGGER_DAYS(3) consecutive days ->
+    """Override: gap > FAST_ITERATE_GAP(10%) for TRIGGER_DAYS(3) consecutive days ->
     don't settle into (or stay in) stabilization; keep iterating every
     STEP_CADENCE_DAYS instead. Returns (fires, gap_today, consecutive_days)."""
     consecutive, gap_today, _, _ = _consecutive_days_over(war_room, d1, FAST_ITERATE_GAP)
@@ -667,9 +669,9 @@ def main():
         flags = check_monitoring(war_room, d1)
 
         if d1 >= next_step:
-            # Re-evaluate gap at step boundary. Cools to <= FAST_ITERATE_GAP(15%)
-            # (not just below the base 10% trigger) -> settle into stabilization;
-            # still above it -> keep iterating every STEP_CADENCE_DAYS.
+            # Re-evaluate gap at step boundary. Cools to <= FAST_ITERATE_GAP(10%)
+            # -> settle into stabilization; still above it -> keep iterating
+            # every STEP_CADENCE_DAYS.
             if gap is not None and gap <= FAST_ITERATE_GAP:
                 stab_end = compute_stab_end(shift['last_step_date'], shift.get('last_step_time'))
                 state = {'phase': 'stabilization', 'shift': None, 'stabilization_end': stab_end}
