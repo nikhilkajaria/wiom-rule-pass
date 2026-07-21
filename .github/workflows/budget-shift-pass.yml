@@ -71,6 +71,16 @@ jobs:
         # A "not ready, postponed" attempt only ever touches pass_readiness_state.json
         # (if it exits before ever reaching the shift logic, not even that) - guard
         # each path's existence so a routine postponement never fails this step.
+        #
+        # Retry-with-rebase (2026-07-21): this push can race against this
+        # same workflow's other retry attempts, and against daily-rule-
+        # pass.yml's own commit step (both run on the same 3 cron slots). A
+        # plain `git push` getting rejected here failed the whole job even
+        # though the actual pass had already posted to Slack - so the
+        # completion marker never reached the remote, and the NEXT scheduled
+        # attempt saw no marker and re-ran the entire pipeline, double-
+        # posting to Slack (happened 2026-07-20 to this workflow, 2026-07-21
+        # to rule-pass's). Retry after a rebase instead of failing outright.
         run: |
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
@@ -78,4 +88,16 @@ jobs:
             [ -f "$f" ] && git add "$f"
           done
           git diff --cached --quiet || git commit -m "budget-shift-pass: update state + log $(date -u +%Y-%m-%d)"
-          git push  # safe/idempotent - no-ops ("Everything up-to-date") if nothing new was committed
+          for i in 1 2 3 4 5; do
+            if git push; then
+              break
+            fi
+            echo "push rejected (attempt $i) - fetching + rebasing and retrying"
+            git fetch origin main
+            if ! git rebase origin/main; then
+              echo "rebase conflict - aborting, will retry next scheduled run"
+              git rebase --abort || true
+              break
+            fi
+            sleep $((RANDOM % 5 + 1))
+          done
