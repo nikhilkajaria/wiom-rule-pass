@@ -1,5 +1,5 @@
 {
-  "phase": "stabilization",
+  "phase": "none",
   "shift": null,
-  "stabilization_end": "2026-07-21"
+  "stabilization_end": null
 }
