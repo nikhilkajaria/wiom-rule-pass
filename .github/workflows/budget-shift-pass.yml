@@ -10,11 +10,11 @@ name: Daily Budget Shift Pass
 #   12:00 UTC = 17:30 IST - attempt 3 (last retry - alerts instead of
 #                            quietly postponing if data is still not ready)
 # Each attempt is the SAME script re-run from scratch; budget_shift_pass.py's
-# own idempotency guard (pass_readiness_state.json) skips a no-op if an
-# earlier attempt already completed successfully for today's D-1. Which
-# attempt this is gets read from github.event.schedule (the exact cron
-# string that fired this run) rather than the current clock time, so a
-# delayed run still gets classified correctly.
+# own idempotency guard (budget_shift_pass_readiness_state.json) skips a
+# no-op if an earlier attempt already completed successfully for today's
+# D-1. Which attempt this is gets read from github.event.schedule (the
+# exact cron string that fired this run) rather than the current clock
+# time, so a delayed run still gets classified correctly.
 #
 # Checks 7-day rolling Meta vs Google CPBL, triggers a shift recommendation
 # if the gap > 10% for 3 consecutive days. Read-only: posts to Slack,
@@ -68,34 +68,37 @@ jobs:
           # SLACK_DM_USER_ID defaults to U05A9037VFG (Nikhil)
 
       - name: Commit updated state + log
-        # A "not ready, postponed" attempt only ever touches pass_readiness_state.json
-        # (if it exits before ever reaching the shift logic, not even that) - guard
-        # each path's existence so a routine postponement never fails this step.
+        # A "not ready, postponed" attempt only ever touches
+        # budget_shift_pass_readiness_state.json (if it exits before ever
+        # reaching the shift logic, not even that) - guard each path's
+        # existence so a routine postponement never fails this step.
         #
-        # Retry-with-merge (2026-07-21, corrected 2026-07-22): this push can
-        # race against this same workflow's other retry attempts, and against
+        # Retry-then-split (2026-07-21 -> 2026-07-23): this push can race
+        # against this same workflow's other retry attempts, and against
         # daily-rule-pass.yml's own commit step (both run on the same 3 cron
         # slots). A plain `git push` getting rejected here failed the whole
         # job even though the actual pass had already posted to Slack - so
         # the completion marker never reached the remote, and the NEXT
         # scheduled attempt saw no marker and re-ran the entire pipeline,
         # double-posting to Slack (happened 2026-07-20 to this workflow,
-        # 2026-07-21 to rule-pass's).
+        # 2026-07-21 and 2026-07-22 to rule-pass's).
         #
-        # First fix used `git rebase origin/main` on rejection, which itself
-        # broke on 2026-07-22: pass_readiness_state.json is only 4 lines, and
-        # rebase applies changes as context-anchored patches - when this
-        # workflow's one-line change (its own key) and rule-pass's one-line
-        # change (its own, different key) land in the same window, rebase's
-        # patch context (the neighboring line) no longer matches and it
-        # reports a conflict, even though the two changes don't logically
-        # overlap at all. `git merge` instead does a real 3-way diff against
-        # the common ancestor per line, so two independent single-line
-        # changes in a tiny file merge cleanly regardless of adjacency.
+        # Tried `git rebase origin/main` on rejection first, then `git merge`
+        # - both still conflicted because the old shared
+        # pass_readiness_state.json was only 4 lines, and this workflow's
+        # one-line change (its own key) sat directly adjacent to rule-pass's
+        # one-line change (a different key, no separating context) - git's
+        # merge machinery flags that as a conflict even though the two edits
+        # never touch the same key. Fixed at the root: each workflow now
+        # commits its OWN file (budget_shift_pass_readiness_state.json
+        # here), so there is never anything to merge or conflict on. The
+        # retry loop stays as a safety net for this workflow's own
+        # overlapping retry attempts, but shouldn't be needed in practice
+        # anymore.
         run: |
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
-          for f in budget_shift_state.json budget_shift_log.csv pass_readiness_state.json; do
+          for f in budget_shift_state.json budget_shift_log.csv budget_shift_pass_readiness_state.json; do
             [ -f "$f" ] && git add "$f"
           done
           git diff --cached --quiet || git commit -m "budget-shift-pass: update state + log $(date -u +%Y-%m-%d)"

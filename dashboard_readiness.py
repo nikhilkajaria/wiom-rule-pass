@@ -15,9 +15,18 @@ Used by both rule_pass.py and budget_shift_pass.py via a 3-attempt retry
 schedule (13:30 / 15:30 / 17:30 IST) - see each workflow's .yml for the
 attempt-detection logic (keyed off which cron fired, immune to GH Actions
 scheduling delay). A lightweight per-script completion marker
-(pass_readiness_state.json) makes each attempt idempotent - once a real
-run completes successfully for D-1, later attempts that day are a no-op
-even if triggered again (e.g. a manual workflow_dispatch).
+(<script>_readiness_state.json - one file per script, not shared) makes
+each attempt idempotent - once a real run completes successfully for D-1,
+later attempts that day are a no-op even if triggered again (e.g. a manual
+workflow_dispatch).
+
+Separate files per script (2026-07-23) - NOT one shared file - because
+both workflows run on the same 3 cron slots and a shared 4-line JSON put
+their independent single-key updates on adjacent lines with no separating
+context. Both `git rebase` and `git merge` flagged that as a conflict even
+though the two changes never touched the same key - splitting the file
+removes the ambiguity entirely, since two commits to two different files
+always combine cleanly.
 
 READINESS_TOLERANCE = 0.90: dashboard spend must be at least 90% of the
 directly-queried actual spend to be considered "ready". Some late-arriving
@@ -33,7 +42,6 @@ META_VER_DEFAULT = 'v23.0'
 GOOGLE_CID_DEFAULT = '1218037894'
 
 _DIR = os.path.dirname(os.path.abspath(__file__))
-STATE_PATH = os.path.join(_DIR, 'pass_readiness_state.json')
 
 
 def load_env():
@@ -146,11 +154,25 @@ def is_dashboard_data_ready(d1, tolerance=READINESS_TOLERANCE):
 
 
 # ---- per-script completion tracking (idempotency across retry attempts) ----
+#
+# One file PER SCRIPT (2026-07-23), not a shared pass_readiness_state.json.
+# rule_pass.py and budget_shift_pass.py run on the same 3 cron slots, and a
+# shared 4-line state file put their independent single-key updates on
+# ADJACENT lines with zero separating context - git's merge (and rebase,
+# tried first) both flagged that as a conflict even though the two changes
+# never touched the same key, because there's no context line to prove the
+# edits are independent. Splitting into separate files removes the ambiguity
+# entirely: two commits to two different files always combine cleanly.
 
-def _load_state():
-    if os.path.exists(STATE_PATH):
+def _state_path(script_name):
+    return os.path.join(_DIR, f'{script_name}_readiness_state.json')
+
+
+def _load_state(script_name):
+    path = _state_path(script_name)
+    if os.path.exists(path):
         try:
-            with open(STATE_PATH, encoding='utf-8') as f:
+            with open(path, encoding='utf-8') as f:
                 return json.load(f)
         except Exception:
             pass
@@ -158,12 +180,10 @@ def _load_state():
 
 
 def already_completed_today(script_name, d1):
-    state = _load_state()
-    return state.get(script_name) == d1.isoformat()
+    state = _load_state(script_name)
+    return state.get('completed_for') == d1.isoformat()
 
 
 def mark_completed_today(script_name, d1):
-    state = _load_state()
-    state[script_name] = d1.isoformat()
-    with open(STATE_PATH, 'w', encoding='utf-8') as f:
-        json.dump(state, f, indent=2, ensure_ascii=False)
+    with open(_state_path(script_name), 'w', encoding='utf-8') as f:
+        json.dump({'completed_for': d1.isoformat()}, f, indent=2, ensure_ascii=False)

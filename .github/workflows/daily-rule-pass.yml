@@ -13,11 +13,11 @@ name: Daily BFC-VOLUME rule-pass
 #   12:00 UTC = 17:30 IST - attempt 3 (last retry - alerts instead of
 #                            quietly postponing if data is still not ready)
 # Each attempt is the SAME script re-run from scratch; rule_pass.py's own
-# idempotency guard (pass_readiness_state.json) skips a no-op if an earlier
-# attempt already completed successfully for today's D-1. Which attempt this
-# is gets read from github.event.schedule (the exact cron string that fired
-# this run) rather than the current clock time, so a delayed run still gets
-# classified correctly.
+# idempotency guard (rule_pass_readiness_state.json) skips a no-op if an
+# earlier attempt already completed successfully for today's D-1. Which
+# attempt this is gets read from github.event.schedule (the exact cron
+# string that fired this run) rather than the current clock time, so a
+# delayed run still gets classified correctly.
 on:
   schedule:
     - cron: '0 8 * * *'
@@ -70,8 +70,8 @@ jobs:
         # no memory of earlier attempts) see that an earlier one already
         # completed today.
         #
-        # Retry-with-merge (2026-07-21, corrected 2026-07-22): this push can
-        # race against this same workflow's other retry attempts, and against
+        # Retry-then-split (2026-07-21 -> 2026-07-23): this push can race
+        # against this same workflow's other retry attempts, and against
         # budget-shift-pass.yml's own commit step (both run on the same 3
         # cron slots). A plain `git push` getting rejected here failed the
         # whole job even though the actual pass had already posted to Slack -
@@ -79,23 +79,25 @@ jobs:
         # scheduled attempt saw no marker and re-ran the entire pipeline,
         # double-posting to Slack (happened 2026-07-20 and 2026-07-21).
         #
-        # First fix used `git rebase origin/main` on rejection, which itself
-        # broke on 2026-07-22: pass_readiness_state.json is only 4 lines, and
-        # rebase applies changes as context-anchored patches - when this
-        # workflow's one-line change (its own key) and budget-shift-pass's
-        # one-line change (its own, different key) land in the same window,
-        # rebase's patch context (the neighboring line) no longer matches and
-        # it reports a conflict, even though the two changes don't logically
-        # overlap at all. `git merge` instead does a real 3-way diff against
-        # the common ancestor per line, so two independent single-line
-        # changes in a tiny file merge cleanly regardless of adjacency.
+        # Tried `git rebase origin/main` on rejection first, then `git merge`
+        # - both still conflicted (2026-07-22, 2026-07-23) because the old
+        # shared pass_readiness_state.json was only 4 lines, and this
+        # workflow's one-line change (its own key) sat directly adjacent to
+        # budget-shift-pass's one-line change (a different key, no
+        # separating context) - git's merge machinery flags that as a
+        # conflict even though the two edits never touch the same key. Fixed
+        # at the root: each workflow now commits its OWN file
+        # (rule_pass_readiness_state.json here), so there is never anything
+        # to merge or conflict on in the first place. The retry loop stays
+        # as a safety net for this workflow's own overlapping retry
+        # attempts, but shouldn't be needed in practice anymore.
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
-          if [ -f pass_readiness_state.json ]; then
-            git add pass_readiness_state.json
+          if [ -f rule_pass_readiness_state.json ]; then
+            git add rule_pass_readiness_state.json
             if ! git diff --cached --quiet; then
-              git commit -m "readiness state: $(date -u +%Y-%m-%d)"
+              git commit -m "rule-pass readiness state: $(date -u +%Y-%m-%d)"
               for i in 1 2 3 4 5; do
                 if git push; then
                   break
