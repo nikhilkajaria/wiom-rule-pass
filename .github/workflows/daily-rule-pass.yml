@@ -70,15 +70,25 @@ jobs:
         # no memory of earlier attempts) see that an earlier one already
         # completed today.
         #
-        # Retry-with-rebase (2026-07-21): this push can race against this
-        # same workflow's other retry attempts, and against budget-shift-
-        # pass.yml's own commit step (both run on the same 3 cron slots). A
-        # plain `git push` getting rejected here failed the whole job even
-        # though the actual pass had already posted to Slack - so the
-        # completion marker never reached the remote, and the NEXT scheduled
-        # attempt saw no marker and re-ran the entire pipeline, double-
-        # posting to Slack (happened 2026-07-20 and 2026-07-21). Retry after
-        # a rebase instead of failing outright.
+        # Retry-with-merge (2026-07-21, corrected 2026-07-22): this push can
+        # race against this same workflow's other retry attempts, and against
+        # budget-shift-pass.yml's own commit step (both run on the same 3
+        # cron slots). A plain `git push` getting rejected here failed the
+        # whole job even though the actual pass had already posted to Slack -
+        # so the completion marker never reached the remote, and the NEXT
+        # scheduled attempt saw no marker and re-ran the entire pipeline,
+        # double-posting to Slack (happened 2026-07-20 and 2026-07-21).
+        #
+        # First fix used `git rebase origin/main` on rejection, which itself
+        # broke on 2026-07-22: pass_readiness_state.json is only 4 lines, and
+        # rebase applies changes as context-anchored patches - when this
+        # workflow's one-line change (its own key) and budget-shift-pass's
+        # one-line change (its own, different key) land in the same window,
+        # rebase's patch context (the neighboring line) no longer matches and
+        # it reports a conflict, even though the two changes don't logically
+        # overlap at all. `git merge` instead does a real 3-way diff against
+        # the common ancestor per line, so two independent single-line
+        # changes in a tiny file merge cleanly regardless of adjacency.
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
@@ -90,11 +100,11 @@ jobs:
                 if git push; then
                   break
                 fi
-                echo "push rejected (attempt $i) - fetching + rebasing and retrying"
+                echo "push rejected (attempt $i) - fetching + merging and retrying"
                 git fetch origin main
-                if ! git rebase origin/main; then
-                  echo "rebase conflict - aborting, will retry next scheduled run"
-                  git rebase --abort || true
+                if ! git merge origin/main --no-edit; then
+                  echo "merge conflict - aborting, will retry next scheduled run"
+                  git merge --abort || true
                   break
                 fi
                 sleep $((RANDOM % 5 + 1))
