@@ -361,7 +361,8 @@
           "120249029011420343"
         ],
         "action_taken": null,
-        "action_timing": null
+        "action_timing": null,
+        "top_spender": false
       },
       {
         "concept_id": "JUN26-C-086",
@@ -377,7 +378,8 @@
           "120250735383360343"
         ],
         "action_taken": null,
-        "action_timing": null
+        "action_timing": null,
+        "top_spender": false
       },
       {
         "concept_id": "JUN26-T-063",
@@ -393,7 +395,8 @@
           "120250387732040343"
         ],
         "action_taken": null,
-        "action_timing": null
+        "action_timing": null,
+        "top_spender": true
       }
     ]
   }

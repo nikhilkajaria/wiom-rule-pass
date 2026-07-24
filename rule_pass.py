@@ -61,6 +61,19 @@ ACTION_LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'kill
 SHEET_ID        = '145hcZtsX_W-ibI5SrW9tksVO0J-Tka9NtuIaIpZglqA'
 SHEET_TAB       = 'Recos'
 
+# ---- reactivation-window state (v2.5.0, 2026-07-23) ----
+# Nikhil, 2026-07-23: a creative reactivated after a genuine pause was being
+# re-killed the next day off its stale PRE-PAUSE lifetime CPBC, with zero
+# chance to post fresh performance first (the same numbers that likely got it
+# paused in the first place). Fix: "lifetime" for kill-eligibility purposes
+# means since the LATER of first-ever-spend or last genuine reactivation, not
+# always since first-ever-spend. One rule for everyone - a creative that's
+# never been paused has last-activation == first-spend, so nothing changes
+# for it. A same-day pause+unpause doesn't count as a reset (must span a
+# distinct earlier calendar date) - guards against trivially resetting the
+# clock by toggling status back within the same day.
+ACTIVATION_STATE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'creative_activation_state.json')
+
 
 def load_env():
     path = r'C:\credentials\.env'
@@ -190,7 +203,11 @@ def save_log(log):
 
 
 def retro_check(log, d1):
-    """Back-fill action_taken for yesterday's KILL entries. Returns list of unacted recos."""
+    """Back-fill action_taken for yesterday's KILL entries. Returns list of unacted recos.
+    Top-spender-flagged kills are excluded from unacted (2026-07-23) - scaling a replacement
+    before pausing is the whole point of that flag, so it not being paused yet isn't a miss.
+    action_taken/action_timing are still back-filled for these (record-keeping, Sheet sync),
+    only the Slack nag is suppressed."""
     yesterday = (d1 - datetime.timedelta(days=1)).isoformat()
     tok = os.environ.get('META_ACCESS_TOKEN')
     ver = os.environ.get('META_API_VERSION', META_VER_DEFAULT)
@@ -207,7 +224,7 @@ def retro_check(log, d1):
                 taken, timing = meta_ad_status_check(ad_ids, yesterday, ver, tok)
                 reco['action_taken'] = taken
                 reco['action_timing'] = timing
-            if reco.get('action_taken') == 'No':
+            if reco.get('action_taken') == 'No' and not reco.get('top_spender'):
                 unacted.append(reco)
     return unacted
 
@@ -215,6 +232,7 @@ def retro_check(log, d1):
 def write_log_entry(log, res, d1, ad_ids_map, median):
     """Append today's KILL recos to the log (idempotent - replaces any existing entry for d1)."""
     recos = []
+    top_spenders = res.get('top_spender_warns', set())
     for (c, lyr, need, lb, sp, x, reason) in res['kills']:
         recos.append({
             'concept_id': c,
@@ -226,6 +244,7 @@ def write_log_entry(log, res, d1, ad_ids_map, median):
             'bc': int(lb),
             'spend': round(sp, 2),
             'median_at_time': round(median, 2) if median else None,
+            'top_spender': c in top_spenders,
             'ad_ids': ad_ids_map.get(c, []),
             'action_taken': None,
             'action_timing': None,
@@ -332,10 +351,12 @@ def write_action_log_csv(log, d1):
 
 
 def git_commit_log(d1):
-    """Commit the updated log JSON back to the repo."""
+    """Commit the updated log JSON (+ activation-state cache) back to the repo."""
     try:
         repo = os.path.dirname(os.path.abspath(__file__))
-        subprocess.run(['git', 'add', LOG_PATH, ACTION_LOG_PATH], cwd=repo, check=True, capture_output=True)
+        paths = [LOG_PATH, ACTION_LOG_PATH]
+        if os.path.exists(ACTIVATION_STATE_PATH): paths.append(ACTIVATION_STATE_PATH)
+        subprocess.run(['git', 'add'] + paths, cwd=repo, check=True, capture_output=True)
         result = subprocess.run(
             ['git', 'commit', '-m', f'kill-pass log {d1.isoformat()}'],
             cwd=repo, capture_output=True
@@ -350,12 +371,129 @@ def git_commit_log(d1):
         print(f'warn: git commit failed - {e}')
 
 
-def compute(d1):
+def _load_activation_state():
+    if os.path.exists(ACTIVATION_STATE_PATH):
+        try:
+            with open(ACTIVATION_STATE_PATH, encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {'last_checked': None, 'events': {}}
+
+
+def _save_activation_state(state):
+    try:
+        with open(ACTIVATION_STATE_PATH, 'w', encoding='utf-8') as f:
+            json.dump(state, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f'warn: could not write activation state - {e}')
+
+
+def _fetch_activity_events(since, until):
+    """Pull ad status-change events from Meta's account Activity Log for [since, until],
+    filtered to BFC-VOLUME BOOKNOW concepts. Returns {concept_id: [{'date','from','to'}, ...]}.
+    Read-only, account-wide edge (not filterable by campaign) - client-side filtered same as
+    everywhere else in this script. Bounded to 30 pages (~3,000 rows) as a sane cap; a full
+    Jun 1 backfill needs ~15 pages in practice."""
+    tok = os.environ.get('META_ACCESS_TOKEN')
+    if not tok: return {}
+    acc = os.environ.get('META_AD_ACCOUNT_ID', META_ACC_DEFAULT)
+    if not str(acc).startswith('act_'): acc = 'act_' + str(acc)
+    ver = os.environ.get('META_API_VERSION', META_VER_DEFAULT)
+    events = collections.defaultdict(list)
+    params = {
+        'since': since, 'until': until, 'limit': 100,
+        'fields': 'event_type,event_time,object_name,extra_data',
+        'access_token': tok,
+    }
+    url = f'https://graph.facebook.com/{ver}/{acc}/activities?' + urllib.parse.urlencode(params)
+    pages = 0
+    try:
+        while url and pages < 30:
+            with urllib.request.urlopen(url, timeout=60) as r:
+                j = json.loads(r.read().decode())
+            if 'error' in j:
+                print('warn: activity log unavailable ->', j['error'].get('message'))
+                return {}
+            for row in j.get('data', []):
+                if row.get('event_type') != 'update_ad_run_status': continue
+                nm = row.get('object_name') or ''
+                m = CONCEPT_RE.search(nm)
+                if not m or 'BOOKNOW' not in nm.upper(): continue
+                cid = m.group(0)
+                try:
+                    extra = json.loads(row.get('extra_data') or '{}')
+                except Exception:
+                    continue
+                old_v = str(extra.get('old_value', '')); new_v = str(extra.get('new_value', ''))
+                et = row.get('event_time', '')
+                try:
+                    ts = datetime.datetime.strptime(et[:19], '%Y-%m-%dT%H:%M:%S')
+                except Exception:
+                    continue
+                # keep the full timestamp, not just the date - same-day events (e.g. an
+                # ad's initial Meta review pipeline churning through several states within
+                # minutes of creation) need TRUE chronological order to resolve correctly,
+                # not just date order (2026-07-23: a same-day-only sort mis-resolved
+                # T-063's creation-day churn as a false later "reactivation").
+                events[cid].append({'ts': ts.isoformat(), 'date': ts.date().isoformat(), 'from': old_v, 'to': new_v})
+            pages += 1
+            url = (j.get('paging') or {}).get('next')
+    except Exception as e:
+        print(f'warn: activity log fetch failed - {str(e)[:120]}')
+        return {}
+    return dict(events)
+
+
+def _derive_last_activation(events_for_concept):
+    """From chronological status-change events for one concept, find the most recent
+    reactivation (-> Active) whose preceding pause (-> Inactive) spanned a distinct
+    earlier calendar date (not a same-day pause+unpause - that's not treated as a
+    reset). This account's activity log uses 'Active'/'Inactive' as the terminal
+    states, not literally 'Paused' - 'Pending process'/'Pending Review' are transient
+    review-queue noise around either transition and are ignored here."""
+    evs = sorted(events_for_concept, key=lambda e: e.get('ts', e['date']))
+    last_inactive_date = None
+    last_activation = None
+    for e in evs:
+        to = e['to']
+        if to == 'Inactive':
+            last_inactive_date = e['date']
+        elif to == 'Active':
+            if last_inactive_date and last_inactive_date != e['date']:
+                last_activation = e['date']
+            last_inactive_date = None
+    return last_activation
+
+
+def get_last_activation_dates(d1):
+    """Per-concept last-activation date (see ACTIVATION_STATE_PATH note above). Cached to
+    disk and refreshed incrementally (only new events since last check) - a full backfill
+    to CAMPAIGN_START only happens once, the first time this runs."""
+    state = _load_activation_state()
+    last_checked = state.get('last_checked')
+    since = CAMPAIGN_START if not last_checked else last_checked
+    new_events = _fetch_activity_events(since, d1.isoformat())
+    events = state.setdefault('events', {})
+    for cid, evs in new_events.items():
+        existing = events.setdefault(cid, [])
+        seen = {(e['date'], e['from'], e['to']) for e in existing}
+        for e in evs:
+            key = (e['date'], e['from'], e['to'])
+            if key not in seen:
+                existing.append(e); seen.add(key)
+    state['last_checked'] = d1.isoformat()
+    _save_activation_state(state)
+    return {cid: d for cid, evs in events.items() if (d := _derive_last_activation(evs))}
+
+
+def compute(d1, last_activation=None):
+    last_activation = last_activation or {}
     metric_start = (d1 - datetime.timedelta(days=WINDOW_DAYS - 1)).isoformat()
     rows = dget('/api/master_export?' + urllib.parse.urlencode({'start': CAMPAIGN_START, 'end': d1.isoformat()}))
-    data = collections.defaultdict(lambda: collections.defaultdict(
-        lambda: {'spend': 0.0, 'bc': 0, 'inst': 0, 'w7s': 0.0, 'w7i': 0, 'layer': 'untagged', 'need': '?'}))
-    first = {}
+    # pass 1: raw per (geo, cid) rows, so each concept's true first-spend date is known
+    # before deciding what counts as its "lifetime" window (see reactivation-window note).
+    raw = collections.defaultdict(lambda: collections.defaultdict(list))
     for r in rows:
         if r.get('channel') != 'META' or 'BFC-VOLUME' not in str(r.get('campaign', '')).upper(): continue
         nm = str(r.get('creative', ''))
@@ -364,12 +502,33 @@ def compute(d1):
         if not m: continue
         cid = m.group(0); g = geo_of(r.get('ad_set', '')) or geo_of(r.get('campaign', '')) or 'Other'
         dt = str(r.get('date', '')); sp = r.get('spend') or 0; bf = r.get('booking_confirmed') or 0; ins = r.get('app_installs') or 0
-        rec = data[g][cid]
-        rec['spend'] += sp; rec['bc'] += bf; rec['inst'] += ins
-        rec['layer'] = layer_of(nm); rec['need'] = need_of(nm)
-        if sp > 0 and (cid not in first or dt < first[cid]): first[cid] = dt
-        if dt >= metric_start:
-            rec['w7s'] += sp; rec['w7i'] += ins; rec['w7b'] = rec.get('w7b', 0) + bf
+        raw[g][cid].append((dt, sp, bf, ins, layer_of(nm), need_of(nm)))
+
+    first = {}
+    for g, cmap in raw.items():
+        for cid, rws in cmap.items():
+            spent_dates = [dt for dt, sp, bf, ins, lyr, need in rws if sp > 0]
+            if spent_dates:
+                d0 = min(spent_dates)
+                if cid not in first or d0 < first[cid]: first[cid] = d0
+
+    window_start = {}
+    for cid, d0 in first.items():
+        la = last_activation.get(cid)
+        window_start[cid] = max(d0, la) if la else d0
+
+    data = collections.defaultdict(lambda: collections.defaultdict(
+        lambda: {'spend': 0.0, 'bc': 0, 'inst': 0, 'w7s': 0.0, 'w7i': 0, 'layer': 'untagged', 'need': '?'}))
+    for g, cmap in raw.items():
+        for cid, rws in cmap.items():
+            wstart = window_start.get(cid) or first.get(cid, '')
+            rec = data[g][cid]
+            for dt, sp, bf, ins, lyr, need in rws:
+                rec['layer'] = lyr; rec['need'] = need
+                if dt >= wstart:
+                    rec['spend'] += sp; rec['bc'] += bf; rec['inst'] += ins
+                if dt >= metric_start:
+                    rec['w7s'] += sp; rec['w7i'] += ins; rec['w7b'] = rec.get('w7b', 0) + bf
     # ---- funnel rows for non-Delhi geo diagnostic (7-day window) ----
     funnel_geo = collections.defaultdict(lambda: {'inst': 0, 'svc_check': 0, 'svc_true': 0, 'bc': 0, 'w7s': 0.0})
     try:
@@ -389,8 +548,11 @@ def compute(d1):
             funnel_geo[g]['w7s'] = sum(x['w7s'] for x in wc.values())
     except Exception as e:
         print(f'warn: funnel_rows fetch failed - {e}')
+    # age keys off window_start (not first-ever-spend) so a reactivated creative gets the
+    # same AGE_GRACE_DAYS runway as a brand-new one, instead of appearing "aged out" (past
+    # grace) while its fresh-window bookings are still thin - see reactivation-window note.
     age = {}
-    for cid, ds in first.items():
+    for cid, ds in window_start.items():
         try: age[cid] = (d1 - datetime.date.fromisoformat(ds)).days
         except Exception: age[cid] = 999
     cstar = None
@@ -690,7 +852,8 @@ def main():
             return
 
     start = (d1 - datetime.timedelta(days=WINDOW_DAYS - 1)).isoformat(); end = d1.isoformat()
-    data, age, cstar, funnel_geo = compute(d1)
+    last_activation = get_last_activation_dates(d1)
+    data, age, cstar, funnel_geo = compute(d1, last_activation)
     active, ad_ids_map = meta_active_del()
     res = decide(data, age, cstar, active, funnel_geo=funnel_geo)
 
