@@ -345,58 +345,58 @@
   },
   {
     "date": "2026-07-23",
-    "median_cpbc": 1187.1,
+    "median_cpbc": 1174.55,
     "recos": [
-      {
-        "concept_id": "JUN26-C-039",
-        "layer": "L1",
-        "need": "NET",
-        "verdict": "KILL",
-        "reason": "efficiency (>= 1.0x median Rs1,187)",
-        "cpbc": 2200.56,
-        "bc": 20,
-        "spend": 44011.16,
-        "median_at_time": 1187.1,
-        "ad_ids": [
-          "120249029011420343"
-        ],
-        "action_taken": null,
-        "action_timing": null,
-        "top_spender": false
-      },
       {
         "concept_id": "JUN26-C-086",
         "layer": "L1",
         "need": "NET",
         "verdict": "KILL",
-        "reason": "efficiency (>= 1.0x median Rs1,187)",
+        "reason": "efficiency (>= 1.0x median Rs1,175)",
         "cpbc": 1513.81,
         "bc": 19,
         "spend": 28762.37,
-        "median_at_time": 1187.1,
+        "median_at_time": 1174.55,
+        "top_spender": false,
         "ad_ids": [
           "120250735383360343"
         ],
         "action_taken": null,
-        "action_timing": null,
-        "top_spender": false
+        "action_timing": null
       },
       {
         "concept_id": "JUN26-T-063",
         "layer": "L2",
         "need": "MCR",
         "verdict": "KILL",
-        "reason": "efficiency (>= 1.0x median Rs1,187)",
+        "reason": "efficiency (>= 1.0x median Rs1,175)",
         "cpbc": 1353.3,
         "bc": 285,
         "spend": 385690.13,
-        "median_at_time": 1187.1,
+        "median_at_time": 1174.55,
+        "top_spender": true,
         "ad_ids": [
           "120250387732040343"
         ],
         "action_taken": null,
-        "action_timing": null,
-        "top_spender": true
+        "action_timing": null
+      },
+      {
+        "concept_id": "JUN26-T-082",
+        "layer": "L2",
+        "need": "FLEX",
+        "verdict": "KILL",
+        "reason": "efficiency (>= 1.0x median Rs1,175)",
+        "cpbc": 1187.1,
+        "bc": 17,
+        "spend": 20180.72,
+        "median_at_time": 1174.55,
+        "top_spender": false,
+        "ad_ids": [
+          "120250539089880343"
+        ],
+        "action_taken": null,
+        "action_timing": null
       }
     ]
   }
