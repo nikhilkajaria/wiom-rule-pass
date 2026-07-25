@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Budget utilization pass -> Slack (DM only for now). v0.5
+"""Budget utilization pass -> Slack (DM only for now). v0.6
 
   For every active in-scope Meta ad set and Google campaign, compares
   yesterday's actual spend to its daily budget. Flags anything where
@@ -9,13 +9,9 @@
   the growth-portal dashboard - it never has today's data (only completed
   days), so it can't get any fresher regardless of when this script runs.
 
-  v0.4: budget is reconstructed as of end-of-day d1, not read live. Live
-  budget + a run scheduled close to midnight (00:15 IST) shrinks the edit
-  window but doesn't close it, and a --date backtest or a delayed run still
-  compares old spend to a possibly-already-edited budget. get_budget_as_of()
-  walks manual_budget_changes.csv backward from the live value, undoing any
-  edit that happened after 23:59:59 IST on d1, to reconstruct what was
-  actually in effect that day.
+  v0.4 tried reconstructing budget as of end-of-day d1 from
+  manual_budget_changes.csv instead of reading it live, to close the edit
+  window a run scheduled close to midnight (00:15 IST) leaves open.
 
   v0.5: that log is now auto-populated for Meta. Tried Google's change_event
   API to reconstruct historical budgets automatically - tested 2026-07-12
@@ -28,6 +24,15 @@
   queries it each run and auto-appends anything new to manual_budget_changes.csv,
   deduped against existing entries. No manual reporting needed for Meta
   budget changes going forward.
+
+  v0.6 (2026-07-24, Nikhil): reverted v0.4 - overcomplicated it. Any fixed
+  cutoff mishandles one side of a near-midnight edit, and it's not worth
+  solving cleverly. Back to reading budget live at run time and using that
+  flat value as the day's reference; a change made mid-day is that day's
+  problem, not this check's. manual_budget_changes.csv is still written
+  here (log_budget_change.py, sync_meta_budget_changes()) as the standing
+  record of what changed and when - just no longer read back in for this
+  comparison.
 
   For each flag, the drill-down answers "what changed" rather than just
   "what's biggest": each creative (Meta) / network (Google) is compared
@@ -92,56 +97,6 @@ def load_manual_changes():
                 'new_budget': float(row['new_budget']),
             })
     return changes
-
-
-def get_budget_as_of(platform, name, d1, current_budget, changes):
-    """
-    Time-weighted average budget in effect during d1 (IST calendar day), reconstructed
-    by walking the manually-logged change history backward from current_budget and
-    undoing edits that happened during or after the day.
-
-    2026-07-24 fix: a fixed cutoff (this used to be "budget at 23:59:59 IST on d1")
-    always mishandles one side of a near-midnight edit. A change made at 23:57 IST
-    only actually governed the last ~3 minutes of that day's delivery, yet an
-    end-of-day cutoff attributed the WHOLE day to the new (higher) budget - real
-    case: Retargeting bumped Rs19,500->22,400 at 23:57:21 IST on Jul 24 made that
-    day look like 75% delivery against the new budget, when it was ~87% delivery
-    against the budget that actually paced the day (Rs19,500). A change made at
-    00:20 IST (this team's usual "just after midnight" timing) needs the opposite
-    - it should count for nearly the whole day, not be excluded by a start-of-day
-    cutoff. Time-weighting across the actual day handles both without guessing a
-    threshold. Falls back to current_budget if no logged changes exist for this
-    entity - the safe default when nothing's known to have moved.
-    """
-    day_start = datetime.datetime.combine(d1, datetime.time(0, 0, 0), tzinfo=IST)
-    day_end = day_start + datetime.timedelta(days=1)
-    relevant = sorted(
-        (c for c in changes if c['platform'] == platform and c['entity_name'] == name),
-        key=lambda c: c['timestamp'],
-    )
-
-    # undo every change from day_end onward (most recent first) to get the budget
-    # value that was still in effect through the end of d1
-    budget_at_day_end = current_budget
-    for c in reversed(relevant):
-        if c['timestamp'] >= day_end:
-            budget_at_day_end = c['old_budget']
-
-    intraday = [c for c in relevant if day_start <= c['timestamp'] < day_end]
-    if not intraday:
-        return budget_at_day_end  # no changes during the day - flat value throughout
-
-    # walk backward through intraday changes to build (start, end, value) segments
-    segments = []
-    value, end_ts = budget_at_day_end, day_end
-    for c in reversed(intraday):
-        segments.append((c['timestamp'], end_ts, value))
-        value, end_ts = c['old_budget'], c['timestamp']
-    segments.append((day_start, end_ts, value))
-
-    total_seconds = (day_end - day_start).total_seconds()
-    weighted = sum((min(e, day_end) - max(s, day_start)).total_seconds() * v for s, e, v in segments)
-    return weighted / total_seconds
 
 
 # ---- Meta budget-change auto-sync (Meta's Activity Log is reliable for this -
@@ -503,11 +458,10 @@ def main():
         print(f'auto-logged {len(new_meta_changes)} Meta budget change(s) from the Activity Log:')
         for c in new_meta_changes:
             print(f"  {c['entity_name']}  {c['old_budget']:,.0f} -> {c['new_budget']:,.0f}  @ {c['timestamp'].isoformat()}")
-    manual_changes = load_manual_changes()
 
     meta_flags   = []
     for name, d in meta_budgets.items():
-        budget = get_budget_as_of('meta', name, d1, d['daily_budget'], manual_changes)
+        budget = d['daily_budget']  # live at run time - see module docstring (v0.6)
         spend  = meta_today_by_adset.get(name, 0.0)
         if budget <= 0: continue
         util = spend / budget
@@ -517,7 +471,7 @@ def main():
     goog_today_by_camp = get_google_day_spend(d1)
     google_flags = []
     for name, d in google_budgets.items():
-        budget = get_budget_as_of('google', name, d1, d['daily_budget'], manual_changes)
+        budget = d['daily_budget']  # live at run time - see module docstring (v0.6)
         spend  = goog_today_by_camp.get(name, 0.0)
         if budget <= 0: continue
         util = spend / budget
