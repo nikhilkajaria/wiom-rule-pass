@@ -96,24 +96,52 @@ def load_manual_changes():
 
 def get_budget_as_of(platform, name, d1, current_budget, changes):
     """
-    Reconstructs the budget in effect at 23:59:59 IST on d1, by walking the
-    manually-logged change history for this entity backward from now and
-    undoing any edit that happened after that moment. Falls back to
-    current_budget if no logged changes exist for this entity - the safe
-    default when nothing's known to have moved.
+    Time-weighted average budget in effect during d1 (IST calendar day), reconstructed
+    by walking the manually-logged change history backward from current_budget and
+    undoing edits that happened during or after the day.
+
+    2026-07-24 fix: a fixed cutoff (this used to be "budget at 23:59:59 IST on d1")
+    always mishandles one side of a near-midnight edit. A change made at 23:57 IST
+    only actually governed the last ~3 minutes of that day's delivery, yet an
+    end-of-day cutoff attributed the WHOLE day to the new (higher) budget - real
+    case: Retargeting bumped Rs19,500->22,400 at 23:57:21 IST on Jul 24 made that
+    day look like 75% delivery against the new budget, when it was ~87% delivery
+    against the budget that actually paced the day (Rs19,500). A change made at
+    00:20 IST (this team's usual "just after midnight" timing) needs the opposite
+    - it should count for nearly the whole day, not be excluded by a start-of-day
+    cutoff. Time-weighting across the actual day handles both without guessing a
+    threshold. Falls back to current_budget if no logged changes exist for this
+    entity - the safe default when nothing's known to have moved.
     """
-    cutoff = datetime.datetime.combine(d1, datetime.time(23, 59, 59), tzinfo=IST)
+    day_start = datetime.datetime.combine(d1, datetime.time(0, 0, 0), tzinfo=IST)
+    day_end = day_start + datetime.timedelta(days=1)
     relevant = sorted(
         (c for c in changes if c['platform'] == platform and c['entity_name'] == name),
-        key=lambda c: c['timestamp'], reverse=True,
+        key=lambda c: c['timestamp'],
     )
-    budget = current_budget
-    for c in relevant:
-        if c['timestamp'] > cutoff:
-            budget = c['old_budget']
-        else:
-            break
-    return budget
+
+    # undo every change from day_end onward (most recent first) to get the budget
+    # value that was still in effect through the end of d1
+    budget_at_day_end = current_budget
+    for c in reversed(relevant):
+        if c['timestamp'] >= day_end:
+            budget_at_day_end = c['old_budget']
+
+    intraday = [c for c in relevant if day_start <= c['timestamp'] < day_end]
+    if not intraday:
+        return budget_at_day_end  # no changes during the day - flat value throughout
+
+    # walk backward through intraday changes to build (start, end, value) segments
+    segments = []
+    value, end_ts = budget_at_day_end, day_end
+    for c in reversed(intraday):
+        segments.append((c['timestamp'], end_ts, value))
+        value, end_ts = c['old_budget'], c['timestamp']
+    segments.append((day_start, end_ts, value))
+
+    total_seconds = (day_end - day_start).total_seconds()
+    weighted = sum((min(e, day_end) - max(s, day_start)).total_seconds() * v for s, e, v in segments)
+    return weighted / total_seconds
 
 
 # ---- Meta budget-change auto-sync (Meta's Activity Log is reliable for this -
