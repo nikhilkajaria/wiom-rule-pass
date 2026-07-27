@@ -475,8 +475,8 @@
         "ad_ids": [
           "120250884640660343"
         ],
-        "action_taken": null,
-        "action_timing": null
+        "action_taken": "Yes",
+        "action_timing": "Late"
       },
       {
         "concept_id": "JUN26-C-039",
@@ -492,7 +492,7 @@
         "ad_ids": [
           "120249029011420343"
         ],
-        "action_taken": null,
+        "action_taken": "No",
         "action_timing": null
       },
       {
@@ -508,6 +508,63 @@
         "top_spender": false,
         "ad_ids": [
           "120250735383360343"
+        ],
+        "action_taken": "Yes",
+        "action_timing": "Late"
+      }
+    ]
+  },
+  {
+    "date": "2026-07-26",
+    "median_cpbc": 1147.5,
+    "recos": [
+      {
+        "concept_id": "JUN26-C-093",
+        "layer": "L2",
+        "need": "MCR",
+        "verdict": "KILL",
+        "reason": "efficiency (>= 1.0x median Rs1,148)",
+        "cpbc": 1474.77,
+        "bc": 5,
+        "spend": 7373.85,
+        "median_at_time": 1147.5,
+        "top_spender": false,
+        "ad_ids": [
+          "120250884642980343"
+        ],
+        "action_taken": null,
+        "action_timing": null
+      },
+      {
+        "concept_id": "JUN26-T-063",
+        "layer": "L2",
+        "need": "MCR",
+        "verdict": "KILL",
+        "reason": "efficiency (>= 1.0x median Rs1,148)",
+        "cpbc": 1317.38,
+        "bc": 323,
+        "spend": 425515.17,
+        "median_at_time": 1147.5,
+        "top_spender": true,
+        "ad_ids": [
+          "120250387732040343"
+        ],
+        "action_taken": null,
+        "action_timing": null
+      },
+      {
+        "concept_id": "JUN26-C-039",
+        "layer": "L1",
+        "need": "NET",
+        "verdict": "KILL",
+        "reason": "efficiency (>= 1.0x median Rs1,148)",
+        "cpbc": 1221.45,
+        "bc": 12,
+        "spend": 14657.46,
+        "median_at_time": 1147.5,
+        "top_spender": false,
+        "ad_ids": [
+          "120249029011420343"
         ],
         "action_taken": null,
         "action_timing": null
