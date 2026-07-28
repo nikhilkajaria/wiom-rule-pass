@@ -1,5 +1,5 @@
 {
-  "last_checked": "2026-07-26",
+  "last_checked": "2026-07-27",
   "events": {
     "JUN26-C-093": [
       {
@@ -81,6 +81,18 @@
         "date": "2026-07-22",
         "from": "Pending process",
         "to": "Update required"
+      },
+      {
+        "ts": "2026-07-26T14:16:32",
+        "date": "2026-07-26",
+        "from": "Pending process",
+        "to": "Inactive"
+      },
+      {
+        "ts": "2026-07-26T14:16:13",
+        "date": "2026-07-26",
+        "from": "Active",
+        "to": "Pending process"
       }
     ],
     "JUN26-C-039": [
@@ -333,6 +345,18 @@
         "date": "2026-07-15",
         "from": "Pending process",
         "to": "Pending Review"
+      },
+      {
+        "ts": "2026-07-26T14:16:21",
+        "date": "2026-07-26",
+        "from": "Pending process",
+        "to": "Inactive"
+      },
+      {
+        "ts": "2026-07-26T14:16:01",
+        "date": "2026-07-26",
+        "from": "Active",
+        "to": "Pending process"
       }
     ],
     "JUN26-C-087": [
