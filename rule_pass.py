@@ -614,25 +614,41 @@ def decide(data, age, cstar, active, funnel_geo=None):
                 f'aged-out (>{AGE_GRACE_DAYS}d, {lb} BC, > {mult}x median Rs{med:,.0f})', x / med))
         else:
             verdict[c] = 'MONITOR'
-    # v2.2.0: daily kill cap - rank by ratio (worst first), kill top DAILY_KILL_CAP, defer rest to MONITOR
-    eff_kill_candidates.sort(key=lambda t: -t[7])
-    res['deferred_kills'] = []
-    for i, (c, lyr, need, lb, sp, x, reason, _ratio) in enumerate(eff_kill_candidates):
-        if i < DAILY_KILL_CAP:
-            verdict[c] = 'KILL'
-            res['kills'].append((c, lyr, need, lb, sp, x, reason))
-        else:
-            verdict[c] = 'MONITOR'
-            res['deferred_kills'].append((c, lyr, need, lb, sp, x, reason))
-    # v2.2.0: top-spender warning - flag if KILL/KILL-REVIEW candidate is #1 or #2 by 7-day spend AND >10% pool share
+    # v2.2.0: is this candidate #1 or #2 by 7-day spend AND >10% pool share - moved ahead
+    # of the daily-cap loop (v2.6.0) so it can gate kills, not just label them afterward.
     pool_w7s = {c: pool[c]['w7s'] for c in spent if act(c)}
     pool_total_w7s = sum(pool_w7s.values())
     top2 = sorted(pool_w7s, key=lambda c: -pool_w7s[c])[:2]
+    def is_top_spender(c):
+        return c in top2 and pool_total_w7s > 0 and pool_w7s[c] / pool_total_w7s > TOP_SPENDER_SHARE
+
+    # v2.2.0: daily kill cap - rank by ratio (worst first), kill top DAILY_KILL_CAP, defer rest to MONITOR
+    # v2.6.0 (2026-07-30, Nikhil): ALSO cap top-spender-flagged kills to 1/day. Killing 2+
+    # dominant volume-drivers on the same day craters near-term booking volume regardless of
+    # how big the rest of the pool is - seen twice (2026-07-24 and 2026-07-29), both times
+    # T-063 and T-083 flagged together. The worse-ratio top-spender still gets killed; any
+    # additional top-spender candidate is deferred to MONITOR even if the daily cap has room.
+    eff_kill_candidates.sort(key=lambda t: -t[7])
+    res['deferred_kills'] = []
+    res['deferred_top_spender'] = []
+    kills_taken = 0
+    top_spender_kills_taken = 0
+    for (c, lyr, need, lb, sp, x, reason, _ratio) in eff_kill_candidates:
+        is_ts = is_top_spender(c)
+        if kills_taken >= DAILY_KILL_CAP:
+            verdict[c] = 'MONITOR'
+            res['deferred_kills'].append((c, lyr, need, lb, sp, x, reason))
+        elif is_ts and top_spender_kills_taken >= 1:
+            verdict[c] = 'MONITOR'
+            res['deferred_top_spender'].append((c, lyr, need, lb, sp, x, reason))
+        else:
+            verdict[c] = 'KILL'
+            res['kills'].append((c, lyr, need, lb, sp, x, reason))
+            kills_taken += 1
+            if is_ts: top_spender_kills_taken += 1
+    # v2.2.0: top-spender warning label, now also covers kills the cap above deferred
     kill_ids = {k[0] for k in res['kills']} | {r[0] for r in res['reviews']}
-    res['top_spender_warns'] = {
-        c for c in top2
-        if c in kill_ids and pool_total_w7s > 0 and pool_w7s[c] / pool_total_w7s > TOP_SPENDER_SHARE
-    }
+    res['top_spender_warns'] = {c for c in kill_ids if is_top_spender(c)}
     res['continue'] = sum(1 for v in verdict.values() if v == 'CONTINUE')
     res['monitor'] = sum(1 for v in verdict.values() if v == 'MONITOR')
     # ---- pool-cap prune (cap 15, layer x need-state coverage, no per-layer floor) ----
@@ -713,7 +729,7 @@ def integrity_line(res):
 def msg_daily(res, cstar, end, unacted=None):
     kills, reviews, cut = res['kills'], res['reviews'], res['prune_cut']
     integ = integrity_line(res)
-    if not kills and not reviews and not cut and not unacted and not res.get('deferred_kills'):
+    if not kills and not reviews and not cut and not unacted and not res.get('deferred_kills') and not res.get('deferred_top_spender'):
         return f":white_check_mark: *BFC-VOLUME daily kill+prune* ({end}, DEL BOOKNOW, lifetime): no kills, no brake, no prune. Pool {res['pool_n']}/{POOL_CAP}.\n{integ}"
     medlabel = "active-only median" if res['active_filter'] else "median (incl. paused)"
     if res['median']:
@@ -743,6 +759,11 @@ def msg_daily(res, cstar, end, unacted=None):
     if deferred:
         lines.append(f"*CAPPED - {len(deferred)} above threshold, deferred to MONITOR (daily cap {DAILY_KILL_CAP})*")
         for k in deferred: lines.append(_row(*k))
+        lines.append("")
+    deferred_ts = res.get('deferred_top_spender', [])
+    if deferred_ts:
+        lines.append(f"*PROTECTED - {len(deferred_ts)} more top-spender kill(s) deferred to MONITOR (max 1 top-spender kill/day)*")
+        for k in deferred_ts: lines.append(_row(*k))
         lines.append("")
     if reviews:
         lines.append(f"*KILL-REVIEW - cost-velocity brake ({len(reviews)})*  _human look, not auto_")
