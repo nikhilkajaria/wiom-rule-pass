@@ -646,8 +646,8 @@
         "ad_ids": [
           "120250884642980343"
         ],
-        "action_taken": null,
-        "action_timing": null
+        "action_taken": "Yes",
+        "action_timing": "Late"
       },
       {
         "concept_id": "JUN26-C-039",
@@ -663,8 +663,8 @@
         "ad_ids": [
           "120249029011420343"
         ],
-        "action_taken": null,
-        "action_timing": null
+        "action_taken": "Yes",
+        "action_timing": "Late"
       },
       {
         "concept_id": "JUN26-T-063",
@@ -680,9 +680,14 @@
         "ad_ids": [
           "120250387732040343"
         ],
-        "action_taken": null,
+        "action_taken": "No",
         "action_timing": null
       }
     ]
+  },
+  {
+    "date": "2026-07-29",
+    "median_cpbc": 1202.39,
+    "recos": []
   }
 ]
