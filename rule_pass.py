@@ -1,6 +1,13 @@
 # -*- coding: utf-8 -*-
 """BFC-VOLUME kill + prune pass -> Slack. Operating Spec v2.2.0 (post SD sign-off, 1 Jul 2026).
 
+  *** EXPERIMENTAL BRANCH (experimental/l7-quadrant-kill, 2026-07-30, Nikhil) ***
+  Efficiency-kill only replaced with an L7-quadrant approach (see the constants section for
+  the full design rationale) - everything else (zero-BC kill, cost-velocity brake, top-spender
+  protection, pool-cap prune) is unchanged from main, so the two are directly comparable.
+  DM-only to Nikhil, unconditionally - never posts to #growth-reports while this is tracked.
+  Not merged to main; run in parallel for a few days before deciding whether to scale it.
+
   DAILY (post-ETL): efficiency kill + zero-BC kill + cost-velocity brake (KILL-REVIEW) + pool-cap
         prune cut-list. Lifetime CPBC (booking_confirmed), lifetime 5-BC gate, NO calendar grace,
         active-only median (Meta effective_status filter), first-spend anchoring. Delhi only.
@@ -10,8 +17,8 @@
            Next day's run back-fills action_taken (Yes/No) + action_timing (On-time/Late) via
            Meta API read of configured_status + updated_time. Unacted KILLs surface in the post.
 
-It NEVER writes to any ad platform - pausing/scaling stays a manual human step. Posts to
-#growth-reports and a DM copy.
+It NEVER writes to any ad platform - pausing/scaling stays a manual human step. On this branch,
+posts to Nikhil's DM only (see EXPERIMENTAL BRANCH note above).
 
 Run:  python rule_pass.py --mode daily  [--dry-run] [--dm-only] [--date YYYY-MM-DD]
 Env (Actions secrets / local C:\\credentials\\.env): WIOM_DASHBOARD_TOKEN, META_ACCESS_TOKEN,
@@ -42,6 +49,28 @@ BRAKE_CPBC_MULT  = 2.0           # x the creative kill line
 ISOLATE_MULT      = 0.7
 ISOLATE_BC_GATE  = 12
 POOL_CAP          = 15
+# ---- experimental branch (2026-07-30, Nikhil): L7-quadrant efficiency kill ----
+# Replaces the lifetime-only efficiency-kill comparison with a 2x2: each creative's LIFETIME
+# CPBC and its own L7-day CPBC are both checked against a SINGLE median - deliberately one
+# median, not two independently-computed ones (two would carry different, incomparable
+# biases - Nikhil's own objection to an earlier draft of this). That single median is L7D-based
+# (not lifetime-based): the account's own median CPBC has genuinely drifted (~Rs800-900 in
+# early/mid-July to ~Rs1,200-1,400 later), so a lifetime-anchored bar would stay diluted by
+# stale, cheaper history instead of reflecting what's achievable right now.
+#   lifetime > median, L7 > median  -> KILL (both lagging and leading indicator agree)
+#   lifetime > median, L7 <= median -> CONTINUE (improving - lifetime avg still catching up)
+#   lifetime <= median, L7 > median -> MONITOR, escalate to KILL after Q3_ESCALATE_DAYS
+#                                       consecutive days (declining - lifetime avg hasn't
+#                                       caught up to a real recent slide yet)
+#   lifetime <= median, L7 <= median -> CONTINUE
+L7_MEDIAN_BC_GATE = 2             # min L7-window bookings to count toward the L7 median -
+                                    # mirrors the same small-sample-median concern as lifetime,
+                                    # applied to this axis specifically (fewer bookings per
+                                    # creature in a 7-day window than lifetime, so needs its
+                                    # own inclusion bar, not reuse of CREATIVE_BC_GATE)
+Q3_ESCALATE_DAYS  = 3             # consecutive days in the "declining" quadrant before it
+                                    # becomes a real kill candidate - matches the TRIGGER_DAYS
+                                    # convention already used in budget_shift_pass.py
 MATURE_GEOS       = {'Delhi'}
 GEO_BUDGET_BC_GATE = 10
 GEO_CONV_INSTALLS = 100
@@ -572,17 +601,44 @@ def compute(d1, last_activation=None):
 
 
 def cpbc(rec): return rec['spend'] / rec['bc'] if rec['bc'] else float('inf')
+def cpbc_l7(rec):
+    b = rec.get('w7b', 0)
+    return rec['w7s'] / b if b else float('inf')
 
 
-def decide(data, age, cstar, active, funnel_geo=None):
+Q3_STREAK_STATE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'l7_quadrant_streak_state.json')
+
+
+def load_q3_streak():
+    if os.path.exists(Q3_STREAK_STATE_PATH):
+        try:
+            with open(Q3_STREAK_STATE_PATH, encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
+def save_q3_streak(state):
+    try:
+        with open(Q3_STREAK_STATE_PATH, 'w', encoding='utf-8') as f:
+            json.dump(state, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f'warn: could not write Q3 streak state - {e}')
+
+
+def decide(data, age, cstar, active, funnel_geo=None, q3_streak=None):
     res = {'kills': [], 'reviews': [], 'isolates': [], 'prune_cut': [], 'pool_n': 0, 'continue': 0,
            'monitor': 0, 'median': None, 'brake_spend': None, 'geo_budget': [], 'geo_conv': [],
            'active_filter': active is not None}
+    q3_streak = q3_streak or {}
+    new_q3_streak = {}
     pool = data.get('Delhi', {})
     spent = [c for c in pool if pool[c]['spend'] > 0]
     def act(c): return (active is None) or (c in active)
-    elig_active = [c for c in spent if act(c) and pool[c]['bc'] >= CREATIVE_BC_GATE]
-    med = statistics.median([cpbc(pool[c]) for c in elig_active]) if elig_active else None
+    # L7-quadrant experiment: single L7D-based median (see constants section for why).
+    l7_elig = [c for c in spent if act(c) and pool[c].get('w7b', 0) >= L7_MEDIAN_BC_GATE]
+    med = statistics.median([cpbc_l7(pool[c]) for c in l7_elig]) if l7_elig else None
     res['median'] = med
     brake_spend = max(BRAKE_CSTAR_MULT * cstar, BRAKE_SPEND_FLOOR) if cstar else BRAKE_SPEND_FLOOR
     res['brake_spend'] = brake_spend
@@ -590,7 +646,7 @@ def decide(data, age, cstar, active, funnel_geo=None):
     eff_kill_candidates = []  # (c, lyr, need, lb, sp, x, reason, ratio) - capped below
     for c in spent:
         if not act(c): continue
-        rec = pool[c]; lb = rec['bc']; sp = rec['spend']; x = cpbc(rec); lyr = rec['layer']
+        rec = pool[c]; lb = rec['bc']; sp = rec['spend']; x = cpbc(rec); x_l7 = cpbc_l7(rec); lyr = rec['layer']
         mult = KILL_MULT.get(lyr, 1.0)
         if lyr == 'L3' and L3_FLIP: mult = 1.0
         kt = (mult * med) if med else None
@@ -599,12 +655,25 @@ def decide(data, age, cstar, active, funnel_geo=None):
         if kt and sp >= brake_spend and x >= BRAKE_CPBC_MULT * kt:
             verdict[c] = 'KILL_REVIEW'; res['reviews'].append((c, lyr, rec['need'], lb, sp, x, f'brake (>=2x line, spend Rs{sp:,.0f})')); continue
         if lb >= CREATIVE_BC_GATE and kt:
-            if x > kt:
-                eff_kill_candidates.append((c, lyr, rec['need'], lb, sp, x, f'efficiency (> {mult}x median Rs{med:,.0f})', x / med))
+            lifetime_above = x > kt
+            l7_above = x_l7 > kt
+            if lifetime_above and l7_above:
+                eff_kill_candidates.append((c, lyr, rec['need'], lb, sp, x,
+                    f'quadrant1: lifetime + L7 both > {mult}x L7median Rs{med:,.0f} (lifetime Rs{x:,.0f}, L7 Rs{x_l7:,.0f})', x / med))
                 continue
+            if (not lifetime_above) and l7_above:
+                streak = q3_streak.get(c, 0) + 1
+                new_q3_streak[c] = streak
+                if streak >= Q3_ESCALATE_DAYS:
+                    eff_kill_candidates.append((c, lyr, rec['need'], lb, sp, x,
+                        f'quadrant3-escalated: L7 Rs{x_l7:,.0f} > {mult}x L7median Rs{med:,.0f} for {streak} consecutive days (lifetime Rs{x:,.0f} still below)', x_l7 / med))
+                else:
+                    verdict[c] = 'MONITOR'
+                continue
+            # quadrants 2 (lifetime above, L7 below - improving) and 4 (both below) land here
             if x <= ISOLATE_MULT * med and lb >= ISOLATE_BC_GATE:
                 verdict[c] = 'ISOLATE'; res['isolates'].append((c, lyr, rec['need'], lb, sp, x)); continue
-            verdict[c] = 'CONTINUE' if x < med else 'MONITOR'
+            verdict[c] = 'CONTINUE'
         elif kt and age.get(c, 0) > AGE_GRACE_DAYS and x > kt:
             # v2.3.0: aged-out - past the 7-day grace window, still below the lifetime
             # BC gate (thin sample) and under the brake spend floor (else the brake
@@ -710,6 +779,7 @@ def decide(data, age, cstar, active, funnel_geo=None):
         if flags:
             res['geo_conv'].append((g, flags, w7s))
     res['verdict'] = dict(verdict)  # full per-creative classification, for ad-hoc inspection - not used in msg_daily/msg_weekly
+    res['q3_streak_new'] = new_q3_streak  # caller persists this (guarded by not dry-run) via save_q3_streak()
     return res
 
 
@@ -885,7 +955,8 @@ def main():
     last_activation = get_last_activation_dates(d1)
     data, age, cstar, funnel_geo = compute(d1, last_activation)
     active, ad_ids_map = meta_active_del()
-    res = decide(data, age, cstar, active, funnel_geo=funnel_geo)
+    q3_streak = load_q3_streak()
+    res = decide(data, age, cstar, active, funnel_geo=funnel_geo, q3_streak=q3_streak)
 
     # Logging (skip in dry-run)
     unacted = []
@@ -897,6 +968,8 @@ def main():
         save_log(log)
         sheet_sync(log, d1)
         git_commit_log(d1)
+        if not args.date:
+            save_q3_streak(res['q3_streak_new'])  # only advance the streak on a real daily run
     elif args.mode == 'daily' and args.dry_run:
         # Show what retro check would say, without writing anything
         log = load_log()
@@ -904,7 +977,7 @@ def main():
 
     msg = msg_daily(res, cstar, end, unacted=unacted) if args.mode == 'daily' else msg_weekly(res, cstar, start, end)
     if args.dry_run: print(msg)
-    else: slack_post(msg, dm_only=args.dm_only)
+    else: slack_post(msg, dm_only=True)  # experimental branch (2026-07-30): DM to Nikhil only, never #growth-reports
 
     if args.mode == 'daily' and not args.dry_run and not args.date:
         from dashboard_readiness import mark_completed_today
