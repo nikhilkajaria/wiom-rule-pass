@@ -49,7 +49,12 @@ GEO_CONV_MULT     = 2.0
 GEO_RUNAWAY_SPEND = 50000
 DASH_BASE         = 'https://growth-portal.up.railway.app'
 ADS_MANAGER       = 'https://adsmanager.facebook.com/adsmanager/manage/ads'
-CONCEPT_RE        = re.compile(r'JUN26-[TCRH]-\d{3}')
+CONCEPT_RE        = re.compile(r'(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{2}-[TCRH]-\d{3}')
+# was hardcoded to 'JUN26-' only (2026-07-30, Nikhil caught it): every JUL26-prefixed
+# creative (5 new ones, added while this stayed JUN26-only) was completely invisible to
+# meta_active_del(), compute(), and the Activity Log parser - never got a verdict, never
+# counted toward the pool or the median, never eligible for the reactivation grace period.
+# Month-agnostic now so this doesn't silently recur every time a new month's batch launches.
 SLACK_CHANNEL_DEFAULT = 'C0B9G0Q68G6'   # #growth-reports
 SLACK_DM_DEFAULT      = 'U05A9037VFG'   # Nikhil
 META_ACC_DEFAULT      = '2007675312900454'
@@ -594,19 +599,19 @@ def decide(data, age, cstar, active, funnel_geo=None):
         if kt and sp >= brake_spend and x >= BRAKE_CPBC_MULT * kt:
             verdict[c] = 'KILL_REVIEW'; res['reviews'].append((c, lyr, rec['need'], lb, sp, x, f'brake (>=2x line, spend Rs{sp:,.0f})')); continue
         if lb >= CREATIVE_BC_GATE and kt:
-            if x >= kt:
-                eff_kill_candidates.append((c, lyr, rec['need'], lb, sp, x, f'efficiency (>= {mult}x median Rs{med:,.0f})', x / med))
+            if x > kt:
+                eff_kill_candidates.append((c, lyr, rec['need'], lb, sp, x, f'efficiency (> {mult}x median Rs{med:,.0f})', x / med))
                 continue
             if x <= ISOLATE_MULT * med and lb >= ISOLATE_BC_GATE:
                 verdict[c] = 'ISOLATE'; res['isolates'].append((c, lyr, rec['need'], lb, sp, x)); continue
             verdict[c] = 'CONTINUE' if x < med else 'MONITOR'
-        elif kt and age.get(c, 0) > AGE_GRACE_DAYS and x >= kt:
+        elif kt and age.get(c, 0) > AGE_GRACE_DAYS and x > kt:
             # v2.3.0: aged-out - past the 7-day grace window, still below the lifetime
             # BC gate (thin sample) and under the brake spend floor (else the brake
             # check above would already have caught it), but already CPBC-bad enough
             # to fail efficiency if it had reached the gate.
             eff_kill_candidates.append((c, lyr, rec['need'], lb, sp, x,
-                f'aged-out (>{AGE_GRACE_DAYS}d, {lb} BC, >= {mult}x median Rs{med:,.0f})', x / med))
+                f'aged-out (>{AGE_GRACE_DAYS}d, {lb} BC, > {mult}x median Rs{med:,.0f})', x / med))
         else:
             verdict[c] = 'MONITOR'
     # v2.2.0: daily kill cap - rank by ratio (worst first), kill top DAILY_KILL_CAP, defer rest to MONITOR
