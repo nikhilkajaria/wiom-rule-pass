@@ -623,32 +623,36 @@ def decide(data, age, cstar, active, funnel_geo=None):
         return c in top2 and pool_total_w7s > 0 and pool_w7s[c] / pool_total_w7s > TOP_SPENDER_SHARE
 
     # v2.2.0: daily kill cap - rank by ratio (worst first), kill top DAILY_KILL_CAP, defer rest to MONITOR
-    # v2.6.0 (2026-07-30, Nikhil): ALSO cap top-spender-flagged kills to 1/day. Killing 2+
-    # dominant volume-drivers on the same day craters near-term booking volume regardless of
-    # how big the rest of the pool is - seen twice (2026-07-24 and 2026-07-29), both times
-    # T-063 and T-083 flagged together. The worse-ratio top-spender still gets killed; any
-    # additional top-spender candidate is deferred to MONITOR even if the daily cap has room.
+    # v2.6.0 (2026-07-30, Nikhil): a top-spender-flagged candidate is now NEVER auto-killed at
+    # all, not just throttled. The original "PROTECTED (find replacement)" design was always
+    # advisory - the pass recommended killing it regardless, the flag just reminded the human
+    # to scale a replacement first. That's inconsistent with "protected until displaced": if a
+    # top-spender is only really safe to remove once something else has scaled up and taken
+    # its place, is_top_spender() already re-evaluates that fresh each day from live spend
+    # share - once a replacement genuinely displaces it (pushes it out of the top-2, or below
+    # 10% share), it stops being flagged and becomes a normal kill candidate again. Until then
+    # it's held out of KILL entirely and shown separately, still visible, just not actionable
+    # as a pause recommendation. (The cost-velocity brake below is untouched - a top-spender
+    # that crosses 2x-the-line still surfaces as KILL_REVIEW, since that's already
+    # human-review-only, not automatic.)
     eff_kill_candidates.sort(key=lambda t: -t[7])
     res['deferred_kills'] = []
     res['deferred_top_spender'] = []
     kills_taken = 0
-    top_spender_kills_taken = 0
     for (c, lyr, need, lb, sp, x, reason, _ratio) in eff_kill_candidates:
-        is_ts = is_top_spender(c)
-        if kills_taken >= DAILY_KILL_CAP:
-            verdict[c] = 'MONITOR'
-            res['deferred_kills'].append((c, lyr, need, lb, sp, x, reason))
-        elif is_ts and top_spender_kills_taken >= 1:
+        if is_top_spender(c):
             verdict[c] = 'MONITOR'
             res['deferred_top_spender'].append((c, lyr, need, lb, sp, x, reason))
-        else:
+        elif kills_taken < DAILY_KILL_CAP:
             verdict[c] = 'KILL'
             res['kills'].append((c, lyr, need, lb, sp, x, reason))
             kills_taken += 1
-            if is_ts: top_spender_kills_taken += 1
-    # v2.2.0: top-spender warning label, now also covers kills the cap above deferred
-    kill_ids = {k[0] for k in res['kills']} | {r[0] for r in res['reviews']}
-    res['top_spender_warns'] = {c for c in kill_ids if is_top_spender(c)}
+        else:
+            verdict[c] = 'MONITOR'
+            res['deferred_kills'].append((c, lyr, need, lb, sp, x, reason))
+    # top-spender warning label for KILL_REVIEW (brake) entries - kills themselves never
+    # contain a top-spender anymore, so this only ever tags reviews now.
+    res['top_spender_warns'] = {r[0] for r in res['reviews'] if is_top_spender(r[0])}
     res['continue'] = sum(1 for v in verdict.values() if v == 'CONTINUE')
     res['monitor'] = sum(1 for v in verdict.values() if v == 'MONITOR')
     # ---- pool-cap prune (cap 15, layer x need-state coverage, no per-layer floor) ----
@@ -762,7 +766,7 @@ def msg_daily(res, cstar, end, unacted=None):
         lines.append("")
     deferred_ts = res.get('deferred_top_spender', [])
     if deferred_ts:
-        lines.append(f"*PROTECTED - {len(deferred_ts)} more top-spender kill(s) deferred to MONITOR (max 1 top-spender kill/day)*")
+        lines.append(f"*PROTECTED - {len(deferred_ts)} top-spender creative(s) held out of KILL - scale a replacement to displace before pausing*")
         for k in deferred_ts: lines.append(_row(*k))
         lines.append("")
     if reviews:
