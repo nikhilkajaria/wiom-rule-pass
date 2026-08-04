@@ -1,5 +1,5 @@
 {
-  "last_checked": "2026-08-01",
+  "last_checked": "2026-08-03",
   "events": {
     "JUN26-C-093": [
       {
@@ -49,6 +49,12 @@
         "date": "2026-07-29",
         "from": "Active",
         "to": "Pending process"
+      },
+      {
+        "ts": "2026-08-02T10:37:14",
+        "date": "2026-08-02",
+        "from": "Inactive",
+        "to": "Deleted"
       }
     ],
     "JUN26-C-092": [
@@ -517,6 +523,12 @@
         "date": "2026-07-30",
         "from": "Active",
         "to": "Pending process"
+      },
+      {
+        "ts": "2026-08-02T10:37:14",
+        "date": "2026-08-02",
+        "from": "Inactive",
+        "to": "Deleted"
       }
     ],
     "JUN26-H-002": [
@@ -4201,6 +4213,12 @@
         "date": "2026-07-28",
         "from": "Pending process",
         "to": "Pending Review"
+      },
+      {
+        "ts": "2026-08-02T10:37:14",
+        "date": "2026-08-02",
+        "from": "Inactive",
+        "to": "Deleted"
       }
     ],
     "JUN26-T-050": [
@@ -5123,6 +5141,24 @@
         "date": "2026-07-29",
         "from": "Pending process",
         "to": "Pending Review"
+      },
+      {
+        "ts": "2026-08-02T10:37:14",
+        "date": "2026-08-02",
+        "from": "Inactive",
+        "to": "Deleted"
+      },
+      {
+        "ts": "2026-08-02T10:04:29",
+        "date": "2026-08-02",
+        "from": "Pending process",
+        "to": "Inactive"
+      },
+      {
+        "ts": "2026-08-02T10:04:09",
+        "date": "2026-08-02",
+        "from": "Active",
+        "to": "Pending process"
       }
     ],
     "JUL26-C-098": [
@@ -5179,6 +5215,46 @@
         "date": "2026-07-30",
         "from": "Pending process",
         "to": "Pending Review"
+      }
+    ],
+    "JUL26-C-103": [
+      {
+        "ts": "2026-08-02T10:46:30",
+        "date": "2026-08-02",
+        "from": "Pending Review",
+        "to": "Active"
+      },
+      {
+        "ts": "2026-08-02T10:39:08",
+        "date": "2026-08-02",
+        "from": "Pending process",
+        "to": "Pending Review"
+      },
+      {
+        "ts": "2026-08-02T10:38:48",
+        "date": "2026-08-02",
+        "from": "Pending Review",
+        "to": "Pending process"
+      }
+    ],
+    "JUL26-C-104": [
+      {
+        "ts": "2026-08-02T10:46:17",
+        "date": "2026-08-02",
+        "from": "Pending Review",
+        "to": "Active"
+      },
+      {
+        "ts": "2026-08-02T10:39:12",
+        "date": "2026-08-02",
+        "from": "Pending process",
+        "to": "Pending Review"
+      },
+      {
+        "ts": "2026-08-02T10:38:53",
+        "date": "2026-08-02",
+        "from": "Pending Review",
+        "to": "Pending process"
       }
     ]
   }
