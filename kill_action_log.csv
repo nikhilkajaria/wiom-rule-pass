@@ -32,3 +32,4 @@ reco_date,concept_id,layer,need_state,bfc,spend,cpbfc,median_at_time,reason,ad_i
 2026-07-28,JUN26-C-093,L2,MCR,5,13868.93,2773.79,1243.12,"efficiency (>= 1.0x median Rs1,243)",120250884642980343,Yes,Late
 2026-07-28,JUN26-C-039,L1,NET,13,20601.85,1584.76,1243.12,"efficiency (>= 1.0x median Rs1,243)",120249029011420343,Yes,Late
 2026-07-28,JUN26-T-063,L2,MCR,331,470914.66,1422.7,1243.12,"efficiency (>= 1.0x median Rs1,243)",120250387732040343,No,
+2026-08-03,JUL26-C-104,L1,NET,5,13606.93,2721.39,1271.6,"efficiency (> 1.0x median Rs1,272)",120251128740690343,No,
