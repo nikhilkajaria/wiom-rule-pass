@@ -741,6 +741,46 @@
         "ad_ids": [
           "120251128740690343"
         ],
+        "action_taken": "No",
+        "action_timing": null
+      }
+    ]
+  },
+  {
+    "date": "2026-08-04",
+    "median_cpbc": 1333.33,
+    "recos": [
+      {
+        "concept_id": "JUL26-C-098",
+        "layer": "L2",
+        "need": "MCR",
+        "verdict": "KILL",
+        "reason": "efficiency (> 1.0x median Rs1,333)",
+        "cpbc": 2760.79,
+        "bc": 5,
+        "spend": 13803.94,
+        "median_at_time": 1333.33,
+        "top_spender": false,
+        "ad_ids": [
+          "120251040366050343"
+        ],
+        "action_taken": null,
+        "action_timing": null
+      },
+      {
+        "concept_id": "JUL26-C-104",
+        "layer": "L1",
+        "need": "NET",
+        "verdict": "KILL",
+        "reason": "efficiency (> 1.0x median Rs1,333)",
+        "cpbc": 1609.18,
+        "bc": 14,
+        "spend": 22528.53,
+        "median_at_time": 1333.33,
+        "top_spender": false,
+        "ad_ids": [
+          "120251128740690343"
+        ],
         "action_taken": null,
         "action_timing": null
       }
