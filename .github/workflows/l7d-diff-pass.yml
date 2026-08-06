@@ -1,0 +1,61 @@
+name: L7D experimental kill-pass diff
+
+# Runs AFTER "Daily BFC-VOLUME rule-pass" completes (any attempt - success or the
+# give-up/alert path both report conclusion=success), so it always has that run's
+# fresh kill_pass_log.json to diff against. l7d_diff_pass.py's own idempotency guard
+# (l7d_diff_state.json) skips a no-op if the triggering run didn't actually produce a
+# new log entry (e.g. a "data not ready" give-up), so this is safe to fire on every
+# completion without double-diffing the same date.
+#
+# DM-only, always - l7d_diff_pass.py hardcodes dm_only=True and never posts to
+# #growth-reports. Purely diagnostic: never writes to kill_pass_log.json,
+# kill_action_log.csv, or creative_activation_state.json, and never touches any ad
+# platform.
+on:
+  workflow_run:
+    workflows: ["Daily BFC-VOLUME rule-pass"]
+    types: [completed]
+  workflow_dispatch: {}   # lets you trigger a manual run from the Actions tab
+
+jobs:
+  l7d-diff:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run L7D diff and DM Nikhil only
+        run: python l7d_diff_pass.py
+        env:
+          WIOM_DASHBOARD_TOKEN: ${{ secrets.WIOM_DASHBOARD_TOKEN }}
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+          META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          # SLACK_DM_USER_ID defaults to U05A9037VFG (Nikhil) - override here only if it changes.
+      - name: Commit diff-state marker (idempotency)
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          if [ -f l7d_diff_state.json ]; then
+            git add l7d_diff_state.json
+            if ! git diff --cached --quiet; then
+              git commit -m "l7d-diff state: $(date -u +%Y-%m-%d)"
+              for i in 1 2 3 4 5; do
+                if git push; then
+                  break
+                fi
+                echo "push rejected (attempt $i) - fetching + merging and retrying"
+                git fetch origin main
+                if ! git merge origin/main --no-edit; then
+                  echo "merge conflict - aborting, will retry next run"
+                  git merge --abort || true
+                  break
+                fi
+                sleep $((RANDOM % 5 + 1))
+              done
+            fi
+          fi

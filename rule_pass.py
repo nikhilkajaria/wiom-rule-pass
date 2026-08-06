@@ -42,6 +42,31 @@ BRAKE_CPBC_MULT  = 2.0           # x the creative kill line
 ISOLATE_MULT      = 0.7
 ISOLATE_BC_GATE  = 12
 POOL_CAP          = 15
+# v2.7.0-experimental (2026-07-30, Nikhil): NOT the production default (still lifetime -
+# see decide()'s variant='lifetime' default). This is an opt-in variant ('l7d') under
+# observation via l7d_diff_pass.py: efficiency kill judged on L7-day CPBC against an L7D
+# median, instead of lifetime CPBC against a lifetime median - not just swapping the
+# benchmark while still judging lifetime CPBC against it (that pairing is incoherent:
+# lifetime is a slow-moving average partly built on this account's cheaper early-July
+# history, an L7D median reflects today's pricier reality, so almost everything would look
+# artificially cheap against a bar it hasn't caught up to yet). Metric and benchmark are
+# both L7D together, so the comparison stays apples-to-apples. CREATIVE_BC_GATE (lifetime)
+# still gates overall kill-eligibility (is this an established creative at all) even under
+# this variant; AGE_GRACE_DAYS and the aged-out path are untouched in both variants
+# (deliberately still lifetime-based - a thin, still-ramping creative's L7 window is even
+# noisier than its already-thin lifetime number, not an improvement).
+#
+# L7_MEDIAN_BC_GATE = 1, not a quality bar: every currently active creative should count
+# toward the L7 median (Nikhil, 2026-07-30) - a higher gate (tried 2) would exclude exactly
+# the case this variant is meant to catch fast: a newer ad with decent spend and zero recent
+# bookings. That creature still gets JUDGED regardless of this gate (unaffected - it always
+# has a well-defined lifetime bc via CREATIVE_BC_GATE, and cpbc_l7() correctly returns inf for
+# it, which is > any finite median). The =1 floor here is a mathematical floor, not a
+# judgment call: a creature with ZERO L7 bookings has no defined L7 CPBC (division by zero),
+# so it literally cannot be averaged into the median - not a policy choice to exclude it.
+L7_MEDIAN_BC_GATE = 1             # min L7-window bookings to count toward the L7 median -
+                                    # the mathematical floor (need >=1 booking for a ratio to
+                                    # exist at all), not a quality/noise-reduction threshold
 MATURE_GEOS       = {'Delhi'}
 GEO_BUDGET_BC_GATE = 10
 GEO_CONV_INSTALLS = 100
@@ -572,17 +597,32 @@ def compute(d1, last_activation=None):
 
 
 def cpbc(rec): return rec['spend'] / rec['bc'] if rec['bc'] else float('inf')
+def cpbc_l7(rec):
+    b = rec.get('w7b', 0)
+    return rec['w7s'] / b if b else float('inf')
 
 
-def decide(data, age, cstar, active, funnel_geo=None):
+def decide(data, age, cstar, active, funnel_geo=None, variant='lifetime'):
+    """variant='lifetime' (default, production): efficiency judged on lifetime CPBC vs a
+    lifetime median - exactly the committed v2.6.0 behavior, unchanged.
+    variant='l7d' (experimental, under observation via l7d_diff_pass.py - NOT wired into
+    the daily production run): efficiency judged on L7-day CPBC vs an L7-day median instead
+    - see the L7_MEDIAN_BC_GATE comment block above for why. Everything else (zero-BC kill,
+    cost-velocity brake, top-spender protection, aged-out path, pool-cap prune, weekly
+    geo checks) is identical in both variants - only the median basis and the per-creature
+    judged metric change."""
     res = {'kills': [], 'reviews': [], 'isolates': [], 'prune_cut': [], 'pool_n': 0, 'continue': 0,
            'monitor': 0, 'median': None, 'brake_spend': None, 'geo_budget': [], 'geo_conv': [],
            'active_filter': active is not None}
     pool = data.get('Delhi', {})
     spent = [c for c in pool if pool[c]['spend'] > 0]
     def act(c): return (active is None) or (c in active)
-    elig_active = [c for c in spent if act(c) and pool[c]['bc'] >= CREATIVE_BC_GATE]
-    med = statistics.median([cpbc(pool[c]) for c in elig_active]) if elig_active else None
+    if variant == 'l7d':
+        elig = [c for c in spent if act(c) and pool[c].get('w7b', 0) >= L7_MEDIAN_BC_GATE]
+        med = statistics.median([cpbc_l7(pool[c]) for c in elig]) if elig else None
+    else:
+        elig = [c for c in spent if act(c) and pool[c]['bc'] >= CREATIVE_BC_GATE]
+        med = statistics.median([cpbc(pool[c]) for c in elig]) if elig else None
     res['median'] = med
     brake_spend = max(BRAKE_CSTAR_MULT * cstar, BRAKE_SPEND_FLOOR) if cstar else BRAKE_SPEND_FLOOR
     res['brake_spend'] = brake_spend
@@ -590,7 +630,8 @@ def decide(data, age, cstar, active, funnel_geo=None):
     eff_kill_candidates = []  # (c, lyr, need, lb, sp, x, reason, ratio) - capped below
     for c in spent:
         if not act(c): continue
-        rec = pool[c]; lb = rec['bc']; sp = rec['spend']; x = cpbc(rec); lyr = rec['layer']
+        rec = pool[c]; lb = rec['bc']; sp = rec['spend']; x = cpbc(rec); x_l7 = cpbc_l7(rec); lyr = rec['layer']
+        judged = x_l7 if variant == 'l7d' else x
         mult = KILL_MULT.get(lyr, 1.0)
         if lyr == 'L3' and L3_FLIP: mult = 1.0
         kt = (mult * med) if med else None
@@ -599,12 +640,14 @@ def decide(data, age, cstar, active, funnel_geo=None):
         if kt and sp >= brake_spend and x >= BRAKE_CPBC_MULT * kt:
             verdict[c] = 'KILL_REVIEW'; res['reviews'].append((c, lyr, rec['need'], lb, sp, x, f'brake (>=2x line, spend Rs{sp:,.0f})')); continue
         if lb >= CREATIVE_BC_GATE and kt:
-            if x > kt:
-                eff_kill_candidates.append((c, lyr, rec['need'], lb, sp, x, f'efficiency (> {mult}x median Rs{med:,.0f})', x / med))
+            if judged > kt:
+                reason = (f'efficiency (L7 CPBC Rs{x_l7:,.0f} > {mult}x L7median Rs{med:,.0f}; lifetime Rs{x:,.0f})'
+                          if variant == 'l7d' else f'efficiency (> {mult}x median Rs{med:,.0f})')
+                eff_kill_candidates.append((c, lyr, rec['need'], lb, sp, x, reason, judged / med))
                 continue
-            if x <= ISOLATE_MULT * med and lb >= ISOLATE_BC_GATE:
+            if judged <= ISOLATE_MULT * med and lb >= ISOLATE_BC_GATE:
                 verdict[c] = 'ISOLATE'; res['isolates'].append((c, lyr, rec['need'], lb, sp, x)); continue
-            verdict[c] = 'CONTINUE' if x < med else 'MONITOR'
+            verdict[c] = 'CONTINUE' if judged < med else 'MONITOR'
         elif kt and age.get(c, 0) > AGE_GRACE_DAYS and x > kt:
             # v2.3.0: aged-out - past the 7-day grace window, still below the lifetime
             # BC gate (thin sample) and under the brake spend floor (else the brake
