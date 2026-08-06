@@ -689,5 +689,101 @@
     "date": "2026-07-29",
     "median_cpbc": 1202.39,
     "recos": []
+  },
+  {
+    "date": "2026-07-30",
+    "median_cpbc": 1219.42,
+    "recos": []
+  },
+  {
+    "date": "2026-07-31",
+    "median_cpbc": 1217.08,
+    "recos": []
+  },
+  {
+    "date": "2026-08-01",
+    "median_cpbc": 1220.08,
+    "recos": [
+      {
+        "concept_id": "JUL26-C-102",
+        "layer": "L2",
+        "need": "MCR",
+        "verdict": "KILL",
+        "reason": "efficiency (> 1.0x median Rs1,220)",
+        "cpbc": 1958.84,
+        "bc": 6,
+        "spend": 11753.04,
+        "median_at_time": 1220.08,
+        "top_spender": false,
+        "ad_ids": [
+          "120251040373410343"
+        ],
+        "action_taken": null,
+        "action_timing": null
+      }
+    ]
+  },
+  {
+    "date": "2026-08-03",
+    "median_cpbc": 1271.6,
+    "recos": [
+      {
+        "concept_id": "JUL26-C-104",
+        "layer": "L1",
+        "need": "NET",
+        "verdict": "KILL",
+        "reason": "efficiency (> 1.0x median Rs1,272)",
+        "cpbc": 2721.39,
+        "bc": 5,
+        "spend": 13606.93,
+        "median_at_time": 1271.6,
+        "top_spender": false,
+        "ad_ids": [
+          "120251128740690343"
+        ],
+        "action_taken": "No",
+        "action_timing": null
+      }
+    ]
+  },
+  {
+    "date": "2026-08-04",
+    "median_cpbc": 1333.33,
+    "recos": [
+      {
+        "concept_id": "JUL26-C-098",
+        "layer": "L2",
+        "need": "MCR",
+        "verdict": "KILL",
+        "reason": "efficiency (> 1.0x median Rs1,333)",
+        "cpbc": 2760.79,
+        "bc": 5,
+        "spend": 13803.94,
+        "median_at_time": 1333.33,
+        "top_spender": false,
+        "ad_ids": [
+          "120251040366050343"
+        ],
+        "action_taken": null,
+        "action_timing": null
+      },
+      {
+        "concept_id": "JUL26-C-104",
+        "layer": "L1",
+        "need": "NET",
+        "verdict": "KILL",
+        "reason": "efficiency (> 1.0x median Rs1,333)",
+        "cpbc": 1609.18,
+        "bc": 14,
+        "spend": 22528.53,
+        "median_at_time": 1333.33,
+        "top_spender": false,
+        "ad_ids": [
+          "120251128740690343"
+        ],
+        "action_taken": null,
+        "action_timing": null
+      }
+    ]
   }
 ]
