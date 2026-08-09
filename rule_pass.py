@@ -104,6 +104,19 @@ SHEET_TAB       = 'Recos'
 # clock by toggling status back within the same day.
 ACTIVATION_STATE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'creative_activation_state.json')
 
+# ---- daily status-snapshot backstop (v2.8.0, 2026-08-08) ----
+# Confirmed directly (Nikhil manually unpaused JUN26-T-048/T-050 on 2026-08-05): the
+# Activity Log CAN silently miss a real status transition. update_ad_run_status fired
+# normally for 75 other ads in that same window, and update_ad_set_run_status fired for
+# 4 unrelated ad sets - but zero events at all for these two ads, their ad set, or their
+# campaign. Both got killed the next day on lifetime CPBC dating back to their original
+# June 15 launch, because the reactivation-window reset never fired. This is an
+# independent, always-on backstop that doesn't depend on the Activity Log at all: it
+# just diffs today's live active set against whatever was last snapshotted. Detects the
+# same class of event by a completely different mechanism, so a gap in one doesn't
+# silently propagate through the other.
+STATUS_SNAPSHOT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'creative_status_snapshot.json')
+
 
 def load_env():
     path = r'C:\credentials\.env'
@@ -386,6 +399,7 @@ def git_commit_log(d1):
         repo = os.path.dirname(os.path.abspath(__file__))
         paths = [LOG_PATH, ACTION_LOG_PATH]
         if os.path.exists(ACTIVATION_STATE_PATH): paths.append(ACTIVATION_STATE_PATH)
+        if os.path.exists(STATUS_SNAPSHOT_PATH): paths.append(STATUS_SNAPSHOT_PATH)
         subprocess.run(['git', 'add'] + paths, cwd=repo, check=True, capture_output=True)
         result = subprocess.run(
             ['git', 'commit', '-m', f'kill-pass log {d1.isoformat()}'],
@@ -399,6 +413,49 @@ def git_commit_log(d1):
             print(f'warn: git commit failed - {result.stderr.decode()[:120]}')
     except Exception as e:
         print(f'warn: git commit failed - {e}')
+
+
+def _load_status_snapshot():
+    if os.path.exists(STATUS_SNAPSHOT_PATH):
+        try:
+            with open(STATUS_SNAPSHOT_PATH, encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return None
+
+
+def _save_status_snapshot(d1, active_now):
+    try:
+        with open(STATUS_SNAPSHOT_PATH, 'w', encoding='utf-8') as f:
+            json.dump({'date': d1.isoformat(), 'active_concepts': sorted(active_now)}, f, indent=2)
+    except Exception as e:
+        print(f'warn: could not write status snapshot - {e}')
+
+
+def _snapshot_diff_reactivations(d1, active_now):
+    """Backstop reactivation detector - see STATUS_SNAPSHOT_PATH note above for why this
+    exists alongside (not instead of) the Activity-Log-based detection. Compares today's
+    live active set against whatever was last snapshotted (could be >1 day old if a run
+    was skipped - e.g. this pass was disabled for several days around 2026-08-06/07). Any
+    concept active now but absent from the last snapshot is treated as reactivated as of
+    TODAY (d1) - the safe upper bound, since we only know it flipped SOMETIME between the
+    two snapshots, not exactly when. First-ever run (no snapshot on disk yet) seeds
+    silently and reports zero reactivations - a cold start must not treat the entire live
+    pool as freshly reactivated. active_now=None (Meta unavailable) skips entirely -
+    never snapshot on incomplete data, or the next real comparison would falsely see
+    everything as a new reactivation."""
+    if active_now is None:
+        return {}
+    prev = _load_status_snapshot()
+    reactivated = {}
+    if prev is not None:
+        prev_active = set(prev.get('active_concepts', []))
+        for cid in active_now:
+            if cid not in prev_active:
+                reactivated[cid] = d1.isoformat()
+    _save_status_snapshot(d1, active_now)
+    return reactivated
 
 
 def _load_activation_state():
@@ -496,10 +553,16 @@ def _derive_last_activation(events_for_concept):
     return last_activation
 
 
-def get_last_activation_dates(d1):
+def get_last_activation_dates(d1, active_now=None):
     """Per-concept last-activation date (see ACTIVATION_STATE_PATH note above). Cached to
     disk and refreshed incrementally (only new events since last check) - a full backfill
-    to CAMPAIGN_START only happens once, the first time this runs."""
+    to CAMPAIGN_START only happens once, the first time this runs.
+
+    active_now (v2.8.0): today's live active set, passed in so the snapshot-diff backstop
+    (see STATUS_SNAPSHOT_PATH) can run alongside the Activity-Log-based detection - two
+    independent mechanisms for the same fact, unioned below so a gap in one doesn't
+    silently propagate through. Callers that don't pass active_now just get the
+    Activity-Log-only behavior (backstop skips itself, same as active_now=None)."""
     state = _load_activation_state()
     last_checked = state.get('last_checked')
     since = CAMPAIGN_START if not last_checked else last_checked
@@ -514,7 +577,25 @@ def get_last_activation_dates(d1):
                 existing.append(e); seen.add(key)
     state['last_checked'] = d1.isoformat()
     _save_activation_state(state)
-    return {cid: d for cid, evs in events.items() if (d := _derive_last_activation(evs))}
+    from_log = {cid: d for cid, evs in events.items() if (d := _derive_last_activation(evs))}
+
+    from_snapshot = _snapshot_diff_reactivations(d1, active_now)
+    # from_log wins whenever it has a date - it's the precise, authoritative event date.
+    # from_snapshot only fills genuine gaps (concepts the log has nothing for at all) -
+    # it must NOT compete by "later date wins", or a snapshot's approximate first-noticed
+    # date (which can lag the real event by days if a run was skipped) would override a
+    # correct, more precise date the log already has. Confirmed live 2026-08-08: the log
+    # eventually got the JUN26-T-048/T-050 event (dated 2026-08-05, correct) days after
+    # this pass first needed it - so this isn't hypothetical, it's the exact ordering that
+    # would otherwise silently corrupt a date the log later resolves correctly.
+    merged = dict(from_log)
+    for cid, d in from_snapshot.items():
+        if cid not in merged:
+            merged[cid] = d
+    newly_caught = set(from_snapshot) - set(from_log)
+    if newly_caught:
+        print(f'snapshot-diff caught {len(newly_caught)} reactivation(s) the Activity Log missed: {sorted(newly_caught)}')
+    return merged
 
 
 def compute(d1, last_activation=None):
@@ -925,9 +1006,9 @@ def main():
             return
 
     start = (d1 - datetime.timedelta(days=WINDOW_DAYS - 1)).isoformat(); end = d1.isoformat()
-    last_activation = get_last_activation_dates(d1)
-    data, age, cstar, funnel_geo = compute(d1, last_activation)
     active, ad_ids_map = meta_active_del()
+    last_activation = get_last_activation_dates(d1, active)
+    data, age, cstar, funnel_geo = compute(d1, last_activation)
     res = decide(data, age, cstar, active, funnel_geo=funnel_geo)
 
     # Logging (skip in dry-run)
