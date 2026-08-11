@@ -861,8 +861,8 @@
         "ad_ids": [
           "120251070970610343"
         ],
-        "action_taken": null,
-        "action_timing": null
+        "action_taken": "Yes",
+        "action_timing": "Late"
       },
       {
         "concept_id": "JUL26-C-099",
@@ -878,8 +878,8 @@
         "ad_ids": [
           "120251040367920343"
         ],
-        "action_taken": null,
-        "action_timing": null
+        "action_taken": "Yes",
+        "action_timing": "Late"
       },
       {
         "concept_id": "JUL26-C-100",
@@ -894,6 +894,63 @@
         "top_spender": false,
         "ad_ids": [
           "120251040370220343"
+        ],
+        "action_taken": "Yes",
+        "action_timing": "Late"
+      }
+    ]
+  },
+  {
+    "date": "2026-08-10",
+    "median_cpbc": 1222.02,
+    "recos": [
+      {
+        "concept_id": "JUN26-T-050",
+        "layer": "L3",
+        "need": "L3-MULTI",
+        "verdict": "KILL",
+        "reason": "efficiency (> 1.2x median Rs1,222)",
+        "cpbc": 1560.56,
+        "bc": 5,
+        "spend": 7802.81,
+        "median_at_time": 1222.02,
+        "top_spender": false,
+        "ad_ids": [
+          "120249258579500343"
+        ],
+        "action_taken": null,
+        "action_timing": null
+      },
+      {
+        "concept_id": "JUL26-C-103",
+        "layer": "L1",
+        "need": "NET",
+        "verdict": "KILL",
+        "reason": "efficiency (> 1.0x median Rs1,222)",
+        "cpbc": 1478.76,
+        "bc": 15,
+        "spend": 22181.43,
+        "median_at_time": 1222.02,
+        "top_spender": false,
+        "ad_ids": [
+          "120251128740480343"
+        ],
+        "action_taken": null,
+        "action_timing": null
+      },
+      {
+        "concept_id": "JUL26-C-105",
+        "layer": "L2",
+        "need": "MCR",
+        "verdict": "KILL",
+        "reason": "efficiency (> 1.0x median Rs1,222)",
+        "cpbc": 1349.64,
+        "bc": 15,
+        "spend": 20244.65,
+        "median_at_time": 1222.02,
+        "top_spender": false,
+        "ad_ids": [
+          "120251177460300343"
         ],
         "action_taken": null,
         "action_timing": null
