@@ -1,0 +1,12 @@
+[
+ {
+  "date": "2026-08-11",
+  "new_concept_count": 20,
+  "distinct_new_clusters": 9,
+  "stuck_count": 1,
+  "top2_share": 84.4,
+  "concepts_to_80pct": 2,
+  "active_pool_size": 10,
+  "distinct_active_clusters": 7
+ }
+]
