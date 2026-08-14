@@ -57,6 +57,16 @@ STEP_CADENCE_DAYS    = 1      # days between steps (was 3 - too slow when the ga
 STABILIZATION_DAYS   = 7      # days of read after gap cools to <= FAST_ITERATE_GAP
 MIN_BC_FOR_CPBL     = 20     # min 7-day BC to trust an ad set's CPBL without caveat
 PAUSE_CANDIDATE_MULT = 2.0    # flag a Meta source as a pause candidate at >= this x the best CPBL
+# v2.1 (2026-08-14, Nikhil): a zero-BC ad set was sorting to the BACK of worst-CPBL-first -
+# same "insufficient data" bucket as a genuinely fresh ad set - because cpbl=None for both.
+# Confirmed live: BHARAT_LUCKNOW spent Rs9,197/7d (0 lifetime bookings since launch, 5-6 days
+# old - not a thin-sample blip) and never once qualified as a reduce source or a pause
+# candidate, because pause_candidates() also filters out cpbl is None before flagging. Real
+# spend + zero bookings is the single clearest bad-performer signal an ad set can produce -
+# it must never be treated as "unknown, judge later." Same principle as ZERO_BC_SPEND in
+# rule_pass.py. Below this floor, cpbl stays None (genuinely too new/thin to judge, sorts
+# last as before) - only real, meaningful spend with zero return gets treated as confirmed-worst.
+ZERO_BOOKING_SPEND_FLOOR = 5000  # Rs 7-day spend; 0 BC above this = confirmed worst (inf), not unknown
 MONITORING_THRESH    = 0.20   # flag if metric moves >20% on both DoD and WoW
 DASH_BASE            = 'https://growth-portal.up.railway.app'
 META_ACC_DEFAULT     = '2007675312900454'
@@ -308,11 +318,21 @@ def rank_meta_sources(meta_budgets, meta_eff):
     RETARGETING became eligible 2026-07-13 - two independent reads (point-in-time
     CPBL and the 2-week trend) agreed it was the weakest Meta performer, not just a
     thin-sample blip. Ad sets without enough data for a CPBL read sort last - cut a
-    known-bad performer before an unknown one."""
+    known-bad performer before an unknown one.
+
+    Zero-BC ad sets are NOT automatically "insufficient data" (see
+    ZERO_BOOKING_SPEND_FLOOR note above) - above the spend floor, zero bookings on
+    real spend is confirmed-worst (cpbl=inf, sorts FIRST), not unknown (cpbl=None,
+    sorts last). Below the floor, still genuinely too thin to judge - unchanged."""
     rows = []
     for name, d in meta_budgets.items():
         eff = meta_eff.get(name, {'spend': 0.0, 'bc': 0})
-        cpbl = (eff['spend'] / eff['bc']) if eff['bc'] > 0 else None
+        if eff['bc'] > 0:
+            cpbl = eff['spend'] / eff['bc']
+        elif eff['spend'] >= ZERO_BOOKING_SPEND_FLOOR:
+            cpbl = float('inf')
+        else:
+            cpbl = None
         rows.append({'name': name, 'budget': d['daily_budget'], 'cpbl': cpbl, 'bc': eff['bc']})
     rows.sort(key=lambda r: (r['cpbl'] is None, -(r['cpbl'] or 0)))
     return rows
@@ -398,7 +418,10 @@ def check_monitoring(war_room, d1):
 # ---- message formatting ----
 
 def fmt_rs(v): return f'Rs {v:,.0f}'
-def fmt_cpbl(v): return f'{v:,.0f}' if v is not None else 'n/a (low volume)'
+def fmt_cpbl(v):
+    if v is None: return 'n/a (low volume)'
+    if v == float('inf'): return 'zero bookings on real spend'
+    return f'{v:,.0f}'
 
 
 def msg_trigger(gap, consecutive, meta_cpbl, google_cpbl, target_rs,
