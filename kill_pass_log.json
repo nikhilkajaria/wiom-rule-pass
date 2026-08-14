@@ -1015,8 +1015,8 @@
         "ad_ids": [
           "120251345777170343"
         ],
-        "action_taken": null,
-        "action_timing": null
+        "action_taken": "Yes",
+        "action_timing": "Late"
       },
       {
         "concept_id": "JUN26-T-095",
@@ -1032,8 +1032,8 @@
         "ad_ids": [
           "120251173878780343"
         ],
-        "action_taken": null,
-        "action_timing": null
+        "action_taken": "Yes",
+        "action_timing": "Late"
       },
       {
         "concept_id": "AUG26-C-114",
@@ -1048,6 +1048,63 @@
         "top_spender": false,
         "ad_ids": [
           "120251345778270343"
+        ],
+        "action_taken": "No",
+        "action_timing": null
+      }
+    ]
+  },
+  {
+    "date": "2026-08-13",
+    "median_cpbc": 1145.8,
+    "recos": [
+      {
+        "concept_id": "JUN26-T-085",
+        "layer": "L1",
+        "need": "NET",
+        "verdict": "KILL",
+        "reason": "aged-out (>7d, 0 BC, > 1.0x median Rs1,146)",
+        "cpbc": null,
+        "bc": 0,
+        "spend": 405.3,
+        "median_at_time": 1145.8,
+        "top_spender": false,
+        "ad_ids": [
+          "120250539095100343"
+        ],
+        "action_taken": null,
+        "action_timing": null
+      },
+      {
+        "concept_id": "AUG26-C-114",
+        "layer": "L2",
+        "need": "MCR",
+        "verdict": "KILL",
+        "reason": "efficiency (> 1.0x median Rs1,146)",
+        "cpbc": 1475.81,
+        "bc": 23,
+        "spend": 33943.67,
+        "median_at_time": 1145.8,
+        "top_spender": false,
+        "ad_ids": [
+          "120251345778270343"
+        ],
+        "action_taken": null,
+        "action_timing": null
+      },
+      {
+        "concept_id": "JUN26-T-097",
+        "layer": "L2",
+        "need": "SDN-EXM",
+        "verdict": "KILL",
+        "reason": "aged-out (>7d, 4 BC, > 1.0x median Rs1,146)",
+        "cpbc": 1301.94,
+        "bc": 4,
+        "spend": 5207.75,
+        "median_at_time": 1145.8,
+        "top_spender": false,
+        "ad_ids": [
+          "120251173879810343"
         ],
         "action_taken": null,
         "action_timing": null
