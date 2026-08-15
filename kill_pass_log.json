@@ -1072,7 +1072,7 @@
         "ad_ids": [
           "120250539095100343"
         ],
-        "action_taken": null,
+        "action_taken": "No",
         "action_timing": null
       },
       {
@@ -1089,7 +1089,7 @@
         "ad_ids": [
           "120251345778270343"
         ],
-        "action_taken": null,
+        "action_taken": "No",
         "action_timing": null
       },
       {
@@ -1102,6 +1102,29 @@
         "bc": 4,
         "spend": 5207.75,
         "median_at_time": 1145.8,
+        "top_spender": false,
+        "ad_ids": [
+          "120251173879810343"
+        ],
+        "action_taken": "No",
+        "action_timing": null
+      }
+    ]
+  },
+  {
+    "date": "2026-08-14",
+    "median_cpbc": 1119.02,
+    "recos": [
+      {
+        "concept_id": "JUN26-T-097",
+        "layer": "L2",
+        "need": "SDN-EXM",
+        "verdict": "KILL",
+        "reason": "aged-out (>7d, 4 BC, > 1.0x median Rs1,119)",
+        "cpbc": 1311.49,
+        "bc": 4,
+        "spend": 5245.96,
+        "median_at_time": 1119.02,
         "top_spender": false,
         "ad_ids": [
           "120251173879810343"
