@@ -245,15 +245,24 @@ def save_log(log):
         print(f'warn: could not write log - {e}')
 
 
-def retro_check(log, d1):
+def retro_check(log, d1, protected_today=None):
     """Back-fill action_taken for yesterday's KILL entries. Returns list of unacted recos.
     Top-spender-flagged kills are excluded from unacted (2026-07-23) - scaling a replacement
     before pausing is the whole point of that flag, so it not being paused yet isn't a miss.
     action_taken/action_timing are still back-filled for these (record-keeping, Sheet sync),
-    only the Slack nag is suppressed."""
+    only the Slack nag is suppressed.
+
+    protected_today (2026-08-15, Nikhil): concept_ids in TODAY's fresh deferred_top_spender
+    list. A creative can be a clean (non-top-spender) KILL call one day, not get paused, and
+    - purely because it kept spending unpaused - graduate into top-spender protection the very
+    next day. "Not acted upon" implies a miss; here the un-pausing is (in hindsight, or simply
+    because the rule now protects it) not something to nag about. If today's run independently
+    protects it, silently drop it from unacted rather than double-flag it - no separate callout,
+    it just isn't nagged."""
     yesterday = (d1 - datetime.timedelta(days=1)).isoformat()
     tok = os.environ.get('META_ACCESS_TOKEN')
     ver = os.environ.get('META_API_VERSION', META_VER_DEFAULT)
+    protected_today = protected_today or set()
     unacted = []
     for entry in log:
         if entry['date'] != yesterday: continue
@@ -267,8 +276,11 @@ def retro_check(log, d1):
                 taken, timing = meta_ad_status_check(ad_ids, yesterday, ver, tok)
                 reco['action_taken'] = taken
                 reco['action_timing'] = timing
-            if reco.get('action_taken') == 'No' and not reco.get('top_spender'):
-                unacted.append(reco)
+            if reco.get('action_taken') != 'No' or reco.get('top_spender'):
+                continue
+            if reco.get('concept_id') in protected_today:
+                continue
+            unacted.append(reco)
     return unacted
 
 
@@ -1012,10 +1024,11 @@ def main():
     res = decide(data, age, cstar, active, funnel_geo=funnel_geo)
 
     # Logging (skip in dry-run)
+    protected_today = {t[0] for t in res.get('deferred_top_spender', [])}
     unacted = []
     if args.mode == 'daily' and not args.dry_run:
         log = load_log()
-        unacted = retro_check(log, d1)
+        unacted = retro_check(log, d1, protected_today=protected_today)
         write_action_log_csv(log, d1)
         log = write_log_entry(log, res, d1, ad_ids_map, res['median'])
         save_log(log)
@@ -1024,7 +1037,7 @@ def main():
     elif args.mode == 'daily' and args.dry_run:
         # Show what retro check would say, without writing anything
         log = load_log()
-        unacted = retro_check(load_log(), d1)  # read-only check for display
+        unacted = retro_check(load_log(), d1, protected_today=protected_today)  # read-only check for display
 
     msg = msg_daily(res, cstar, end, unacted=unacted) if args.mode == 'daily' else msg_weekly(res, cstar, start, end)
     if args.dry_run: print(msg)
