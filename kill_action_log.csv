@@ -49,3 +49,4 @@ reco_date,concept_id,layer,need_state,bfc,spend,cpbfc,median_at_time,reason,ad_i
 2026-08-13,JUN26-T-085,L1,NET,0,405.3,,1145.8,"aged-out (>7d, 0 BC, > 1.0x median Rs1,146)",120250539095100343,No,
 2026-08-13,AUG26-C-114,L2,MCR,23,33943.67,1475.81,1145.8,"efficiency (> 1.0x median Rs1,146)",120251345778270343,No,
 2026-08-13,JUN26-T-097,L2,SDN-EXM,4,5207.75,1301.94,1145.8,"aged-out (>7d, 4 BC, > 1.0x median Rs1,146)",120251173879810343,No,
+2026-08-14,JUN26-T-097,L2,SDN-EXM,4,5245.96,1311.49,1119.02,"aged-out (>7d, 4 BC, > 1.0x median Rs1,119)",120251173879810343,Yes,Late
