@@ -912,7 +912,8 @@ def integrity_line(res):
 def msg_daily(res, cstar, end, unacted=None):
     kills, reviews, cut = res['kills'], res['reviews'], res['prune_cut']
     integ = integrity_line(res)
-    if not kills and not reviews and not cut and not unacted and not res.get('deferred_kills') and not res.get('deferred_top_spender'):
+    if (not kills and not reviews and not cut and not unacted and not res.get('deferred_kills')
+            and not res.get('deferred_top_spender') and not res.get('deferred_live_spend')):
         return f":white_check_mark: *BFC-VOLUME daily kill+prune* ({end}, DEL BOOKNOW, lifetime): no kills, no brake, no prune. Pool {res['pool_n']}/{POOL_CAP}.\n{integ}"
     medlabel = "active-only median" if res['active_filter'] else "median (incl. paused)"
     if res['median']:
@@ -932,13 +933,10 @@ def msg_daily(res, cstar, end, unacted=None):
     if kills:
         lines.append(f"*KILL ({len(kills)})*")
         warns = res.get('top_spender_warns', set())
-        live_warns = res.get('live_spend_warns', set())
         for k in kills:
             row = _row(*k)
             if k[0] in warns:
                 row += "  :warning: *TOP SPENDER - scale replacement before pausing*"
-            if k[0] in live_warns:
-                row += "  :rotating_light: *TODAY'S TOP SPENDER (LIVE) - this is based on D-1 data; verify today's live spend in Ads Manager before pausing*"
             lines.append(row)
         lines.append("")
     deferred = res.get('deferred_kills', [])
@@ -947,9 +945,12 @@ def msg_daily(res, cstar, end, unacted=None):
         for k in deferred: lines.append(_row(*k))
         lines.append("")
     deferred_ts = res.get('deferred_top_spender', [])
-    if deferred_ts:
-        lines.append(f"*PROTECTED - {len(deferred_ts)} top-spender creative(s) held out of KILL - scale a replacement to displace before pausing*")
+    deferred_live = res.get('deferred_live_spend', [])
+    if deferred_ts or deferred_live:
+        lines.append(f"*PROTECTED - {len(deferred_ts) + len(deferred_live)} creative(s) held out of KILL - scale a replacement to displace before pausing*")
         for k in deferred_ts: lines.append(_row(*k))
+        for k in deferred_live:
+            lines.append(_row(*k) + "  :rotating_light: *today's live spend, not D-1 - already this pool's #1/#2 spender today*")
         lines.append("")
     if reviews:
         lines.append(f"*KILL-REVIEW - cost-velocity brake ({len(reviews)})*  _human look, not auto_")
@@ -1069,18 +1070,32 @@ def main():
     data, age, cstar, funnel_geo = compute(d1, last_activation)
     res = decide(data, age, cstar, active, funnel_geo=funnel_geo)
 
-    # Live same-day spend cross-check (2026-08-17) - see meta_today_spend() docstring.
-    # Only meaningful for a live daily run against real D-1 data; skip for --date backtests.
-    res['live_spend_warns'] = set()
+    # Live same-day spend cross-check (2026-08-17, Nikhil) - see meta_today_spend()
+    # docstring. Same treatment as trailing-7d top-spender: pull the concept out of KILL
+    # entirely (verdict -> MONITOR) into deferred_live_spend, rendered under PROTECTED
+    # (tagged separately so the reason is clear) - not just a warning label on a KILL
+    # line, since a KILL still reads as "recommended" even with a warning attached. Only
+    # meaningful for a live daily run against real D-1 data; skip for --date backtests.
+    res['deferred_live_spend'] = []
     if args.mode == 'daily' and not args.date:
         today_ist = d1 + datetime.timedelta(days=1)
         today_spend = meta_today_spend(ad_ids_map, today_ist)
         if today_spend:
-            top_today = sorted(today_spend, key=lambda c: -today_spend[c])[:2]
-            res['live_spend_warns'] = {c for c in top_today if today_spend[c] > 0}
+            top_today = {c for c in sorted(today_spend, key=lambda c: -today_spend[c])[:2] if today_spend[c] > 0}
+            if top_today:
+                still_kills = []
+                for k in res['kills']:
+                    if k[0] in top_today:
+                        res['deferred_live_spend'].append(k)
+                        res['verdict'][k[0]] = 'MONITOR'
+                        res['monitor'] += 1
+                    else:
+                        still_kills.append(k)
+                res['kills'] = still_kills
 
     # Logging (skip in dry-run)
-    protected_today = {t[0] for t in res.get('deferred_top_spender', [])}
+    protected_today = ({t[0] for t in res.get('deferred_top_spender', [])} |
+                        {t[0] for t in res.get('deferred_live_spend', [])})
     unacted = []
     if args.mode == 'daily' and not args.dry_run:
         log = load_log()
