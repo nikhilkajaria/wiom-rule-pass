@@ -1,5 +1,5 @@
 {
-  "last_checked": "2026-08-15",
+  "last_checked": "2026-08-16",
   "events": {
     "JUN26-C-093": [
       {
@@ -2222,6 +2222,18 @@
         "ts": "2026-08-13T18:18:28",
         "date": "2026-08-13",
         "from": "Inactive",
+        "to": "Pending process"
+      },
+      {
+        "ts": "2026-08-15T08:44:43",
+        "date": "2026-08-15",
+        "from": "Pending process",
+        "to": "Inactive"
+      },
+      {
+        "ts": "2026-08-15T08:44:25",
+        "date": "2026-08-15",
+        "from": "Active",
         "to": "Pending process"
       }
     ],
@@ -5531,6 +5543,18 @@
         "date": "2026-08-04",
         "from": "Active",
         "to": "Pending process"
+      },
+      {
+        "ts": "2026-08-15T08:44:21",
+        "date": "2026-08-15",
+        "from": "Pending process",
+        "to": "Inactive"
+      },
+      {
+        "ts": "2026-08-15T08:44:02",
+        "date": "2026-08-15",
+        "from": "Active",
+        "to": "Pending process"
       }
     ],
     "JUL26-C-101": [
@@ -6087,6 +6111,62 @@
       {
         "ts": "2026-08-11T02:13:24",
         "date": "2026-08-11",
+        "from": "Pending process",
+        "to": "Pending Review"
+      }
+    ],
+    "AUG26-C-116": [
+      {
+        "ts": "2026-08-15T10:39:32",
+        "date": "2026-08-15",
+        "from": "Pending Review",
+        "to": "Active"
+      },
+      {
+        "ts": "2026-08-15T10:30:02",
+        "date": "2026-08-15",
+        "from": "Pending process",
+        "to": "Pending Review"
+      }
+    ],
+    "AUG26-R-118": [
+      {
+        "ts": "2026-08-15T10:38:58",
+        "date": "2026-08-15",
+        "from": "Pending Review",
+        "to": "Active"
+      },
+      {
+        "ts": "2026-08-15T10:31:03",
+        "date": "2026-08-15",
+        "from": "Pending process",
+        "to": "Pending Review"
+      }
+    ],
+    "AUG26-R-117": [
+      {
+        "ts": "2026-08-15T10:38:19",
+        "date": "2026-08-15",
+        "from": "Pending Review",
+        "to": "Active"
+      },
+      {
+        "ts": "2026-08-15T10:30:21",
+        "date": "2026-08-15",
+        "from": "Pending process",
+        "to": "Pending Review"
+      }
+    ],
+    "AUG26-C-115": [
+      {
+        "ts": "2026-08-15T10:23:14",
+        "date": "2026-08-15",
+        "from": "Pending Review",
+        "to": "Active"
+      },
+      {
+        "ts": "2026-08-15T10:14:20",
+        "date": "2026-08-15",
         "from": "Pending process",
         "to": "Pending Review"
       }
