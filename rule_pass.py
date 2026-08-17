@@ -198,6 +198,49 @@ def meta_active_del():
         return None, {}
 
 
+def meta_today_spend(ad_ids_map, today_date):
+    """Live spend-SO-FAR TODAY (not the D-1 anchor decide() judges everything on) per
+    concept_id. Added 2026-08-17 (Nikhil): JUN26-T-048 was recommended KILL off D-1
+    lifetime CPBC, but by the time of the run it had already become the DEL_ALL_PBFC
+    pool's #1 live spender today - a same-day surge the once-daily D-1 pass structurally
+    cannot see (unlike the top-spender check, which sees it once it shows up in a
+    trailing-7d window, i.e. a day or more later). This is a read-only cross-check, not
+    a verdict change - decide() and the KILL list are untouched; it only adds a warning
+    label so a human doesn't pause something that's actively becoming the account's
+    biggest spender right now. Returns {concept_id: spend} for concepts with any spend
+    today; empty dict (silently) if Meta is unavailable, so a failure here never blocks
+    the rest of the pass."""
+    tok = os.environ.get('META_ACCESS_TOKEN')
+    if not tok or not ad_ids_map: return {}
+    acc = os.environ.get('META_AD_ACCOUNT_ID', META_ACC_DEFAULT)
+    if not str(acc).startswith('act_'): acc = 'act_' + str(acc)
+    ver = os.environ.get('META_API_VERSION', META_VER_DEFAULT)
+    ad_to_concept = {aid: cid for cid, ids in ad_ids_map.items() for aid in ids}
+    spend_by_ad = {}
+    url = f'https://graph.facebook.com/{ver}/{acc}/insights?' + urllib.parse.urlencode({
+        'level': 'ad', 'fields': 'ad_id,spend',
+        'time_range': json.dumps({'since': today_date.isoformat(), 'until': today_date.isoformat()}),
+        'limit': 500, 'access_token': tok})
+    calls = 0
+    try:
+        while url and calls < 10:
+            with urllib.request.urlopen(url, timeout=60) as r:
+                j = json.loads(r.read().decode())
+            if 'error' in j:
+                print('warn: live-spend check unavailable ->', j['error'].get('message')); return {}
+            for row in j.get('data', []):
+                spend_by_ad[row['ad_id']] = float(row.get('spend', 0))
+            calls += 1
+            url = (j.get('paging') or {}).get('next')
+    except Exception as e:
+        print(f'warn: live-spend check failed - {str(e)[:120]}'); return {}
+    spend_by_concept = collections.defaultdict(float)
+    for aid, sp in spend_by_ad.items():
+        cid = ad_to_concept.get(aid)
+        if cid: spend_by_concept[cid] += sp
+    return dict(spend_by_concept)
+
+
 def meta_ad_status_check(ad_ids, reco_date_str, ver, tok):
     """Check if ads for a concept were paused on reco_date (IST).
     Uses configured_status + updated_time (IST conversion).
@@ -889,10 +932,13 @@ def msg_daily(res, cstar, end, unacted=None):
     if kills:
         lines.append(f"*KILL ({len(kills)})*")
         warns = res.get('top_spender_warns', set())
+        live_warns = res.get('live_spend_warns', set())
         for k in kills:
             row = _row(*k)
             if k[0] in warns:
                 row += "  :warning: *TOP SPENDER - scale replacement before pausing*"
+            if k[0] in live_warns:
+                row += "  :rotating_light: *TODAY'S TOP SPENDER (LIVE) - this is based on D-1 data; verify today's live spend in Ads Manager before pausing*"
             lines.append(row)
         lines.append("")
     deferred = res.get('deferred_kills', [])
@@ -1022,6 +1068,16 @@ def main():
     last_activation = get_last_activation_dates(d1, active)
     data, age, cstar, funnel_geo = compute(d1, last_activation)
     res = decide(data, age, cstar, active, funnel_geo=funnel_geo)
+
+    # Live same-day spend cross-check (2026-08-17) - see meta_today_spend() docstring.
+    # Only meaningful for a live daily run against real D-1 data; skip for --date backtests.
+    res['live_spend_warns'] = set()
+    if args.mode == 'daily' and not args.date:
+        today_ist = d1 + datetime.timedelta(days=1)
+        today_spend = meta_today_spend(ad_ids_map, today_ist)
+        if today_spend:
+            top_today = sorted(today_spend, key=lambda c: -today_spend[c])[:2]
+            res['live_spend_warns'] = {c for c in top_today if today_spend[c] > 0}
 
     # Logging (skip in dry-run)
     protected_today = {t[0] for t in res.get('deferred_top_spender', [])}
