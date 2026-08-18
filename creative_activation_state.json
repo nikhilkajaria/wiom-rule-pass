@@ -1,5 +1,5 @@
 {
-  "last_checked": "2026-08-16",
+  "last_checked": "2026-08-17",
   "events": {
     "JUN26-C-093": [
       {
@@ -465,6 +465,18 @@
         "date": "2026-08-04",
         "from": "Inactive",
         "to": "Deleted"
+      },
+      {
+        "ts": "2026-08-16T18:28:10",
+        "date": "2026-08-16",
+        "from": "Pending process",
+        "to": "Inactive"
+      },
+      {
+        "ts": "2026-08-16T18:27:51",
+        "date": "2026-08-16",
+        "from": "Active",
+        "to": "Pending process"
       }
     ],
     "JUN26-C-087": [
@@ -5255,6 +5267,18 @@
         "date": "2026-07-28",
         "from": "Pending process",
         "to": "Pending Review"
+      },
+      {
+        "ts": "2026-08-16T18:28:04",
+        "date": "2026-08-16",
+        "from": "Pending process",
+        "to": "Inactive"
+      },
+      {
+        "ts": "2026-08-16T18:27:44",
+        "date": "2026-08-16",
+        "from": "Active",
+        "to": "Pending process"
       }
     ],
     "JUN26-T-041": [
@@ -6035,6 +6059,18 @@
         "date": "2026-08-06",
         "from": "Pending process",
         "to": "Pending Review"
+      },
+      {
+        "ts": "2026-08-16T10:31:26",
+        "date": "2026-08-16",
+        "from": "Pending process",
+        "to": "Inactive"
+      },
+      {
+        "ts": "2026-08-16T10:31:06",
+        "date": "2026-08-16",
+        "from": "Active",
+        "to": "Pending process"
       }
     ],
     "AUG26-H-010": [
