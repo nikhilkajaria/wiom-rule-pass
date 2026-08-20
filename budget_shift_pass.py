@@ -1,36 +1,53 @@
 # -*- coding: utf-8 -*-
-"""Budget channel rebalancing pass -> Slack. Spec v2.1.
+"""Budget channel rebalancing pass -> Slack. Spec v2.2.
 
   Runs daily after kill pass (07:30 IST). Checks 7-day rolling Branch-attributed
-  CPBL per channel (Meta vs Google). Trigger: gap > 10% for 3 consecutive days.
+  CPBL per channel (Meta vs Google). Trigger: |gap| > 10% for 3 consecutive days,
+  EITHER direction (v2.2, 2026-08-20 - see below; was Meta-worse-only through v2.1).
 
   Tiered stabilization (v2.0, per Guneet/Nikhil alignment 2026-07-11;
   fast-iterate threshold tightened 15% -> 10% per Nikhil 2026-07-20):
-    - gap <= 10% ("FAST_ITERATE_GAP"): safe to settle - full 7-day stabilization,
+    - |gap| <= 10% ("FAST_ITERATE_GAP"): safe to settle - full 7-day stabilization,
       no new shifts until it completes.
-    - gap  > 10% for 3 consecutive days: don't wait - keep iterating every
+    - |gap| > 10% for 3 consecutive days: don't wait - keep iterating every
       3 days. This ALSO breaks an active stabilization early if the gap
       re-widens past 10% for 3 days while parked (the exact gap that let the
-      Jul 8-10 gap run unaddressed through a stale stabilization window).
+      Jul 8-10 gap run unaddressed through a stale stabilization window), and
+      breaks an in-progress SHIFT early if the gap reverses to the other
+      channel being worse (v2.2) rather than let a settle-check misread a
+      hard reversal as "gap closed."
 
-  Sizing (v2.0): each step's total move is a channel-level ceiling
-  (min(gap/2, 15%) x Meta total, capped at 15% x Google total). That total is
-  then DISTRIBUTED - not dumped into one ad set/campaign:
-    - Meta: drawn from ALL in-scope ad sets worst-CPBL-first, each capped at
-      15% of its own budget - so the shift stops loading entirely onto
-      whichever ad set happens to be biggest, and instead hits the worst
-      performers first. RETARGETING became eligible 2026-07-13 (v2.1) - it
-      was excluded by default before, but two independent reads (point-in-
-      time CPBL and the 2-week trend) agreed it had become the weakest Meta
-      performer, not just a thin-sample blip, so the blanket exclusion no
-      longer held.
-    - Google: funded into in-scope campaigns best-CPBL-first, each ALSO capped
-      at 15% of its own budget (previously the whole channel-level amount
-      could land on one campaign, silently exceeding that campaign's own 15%
-      anti-shock cap - the same discipline now applies to both sides).
-  Ad sets whose CPBL is >= 2x the best Meta performer are flagged as pause
-  candidates in the message (advisory only - pausing is always a human call,
-  never sized into the automatic allocation).
+  Bidirectional (v2.2, 2026-08-20, Nikhil): through v2.1 the trigger only ever
+  checked gap > +threshold (Meta worse, i.e. more expensive) - a large NEGATIVE
+  gap (Meta suddenly much CHEAPER than Google) satisfied neither the trigger nor
+  the fast-iterate override, no matter how large or how many days it persisted,
+  and every such day actively reset the (nonexistent) streak to 0. Caught live
+  on 2026-08-19's -48.1% gap, the third straight day past -10%, with the pass
+  still sitting in a stale stabilization hold, structurally blind to it. Now
+  symmetric: gap=(meta_cpbl-google_cpbl)/meta_cpbl positive-and-large -> Meta is
+  the SOURCE (drawn from), Google the DESTINATION (funded into) - the original,
+  only direction before today. Negative-and-large -> reversed: Google is the
+  source, Meta the destination. Sizing, ranking, and allocation are identical
+  either way, just with the two channels swapped.
+
+  Sizing (v2.0, generalized v2.2): each step's total move is a channel-level
+  ceiling (min(|gap|/2, 15%) x source total, capped at 15% x destination total).
+  That total is then DISTRIBUTED - not dumped into one ad set/campaign:
+    - Source: drawn from ALL in-scope ad sets/campaigns worst-CPBL-first, each
+      capped at 15% of its own budget - so the shift stops loading entirely onto
+      whichever one happens to be biggest, and instead hits the worst
+      performers first. Meta's RETARGETING became eligible as a source
+      2026-07-13 (v2.1) - it was excluded by default before, but two
+      independent reads (point-in-time CPBL and the 2-week trend) agreed it had
+      become the weakest Meta performer, not just a thin-sample blip, so the
+      blanket exclusion no longer held.
+    - Destination: funded into in-scope ad sets/campaigns best-CPBL-first, each
+      ALSO capped at 15% of its own budget (previously the whole channel-level
+      amount could land on one campaign, silently exceeding that campaign's own
+      15% anti-shock cap - the same discipline applies on both sides).
+  Ad sets/campaigns whose CPBL is >= 2x the best source-channel performer are
+  flagged as pause candidates in the message (advisory only - pausing is always
+  a human call, never sized into the automatic allocation).
 
   Posts recommendation to Slack; human approves and executes. Read-only -
   it NEVER writes to any ad platform.
@@ -233,14 +250,29 @@ def get_google_budgets():
 
 # ---- trigger logic ----
 
-def _consecutive_days_over(war_room, d1, threshold):
-    """Walk back 14 days from d1, count consecutive days where
-    gap=(meta_cpbl-google_cpbl)/meta_cpbl > threshold. Returns
-    (consecutive, gap_today, meta_cpbl_today, google_cpbl_today)."""
-    consecutive = 0
-    gap_today = None
-    meta_cpbl_today = None
-    google_cpbl_today = None
+DIRECTIONS = ('META_TO_GOOGLE', 'GOOGLE_TO_META')
+SOURCE_LABEL = {'META_TO_GOOGLE': 'Meta', 'GOOGLE_TO_META': 'Google'}
+DEST_LABEL   = {'META_TO_GOOGLE': 'Google', 'GOOGLE_TO_META': 'Meta'}
+
+
+def _consecutive_days_direction(war_room, d1, threshold):
+    """Walk back 14 days from d1. gap=(meta_cpbl-google_cpbl)/meta_cpbl: positive
+    means Meta is worse (more expensive), negative means Google is worse. Tracks
+    TWO independent streaks - consecutive days Meta-worse-beyond-threshold and
+    consecutive days Google-worse-beyond-threshold - since a day can satisfy at
+    most one direction; whichever direction a day doesn't satisfy gets reset to 0,
+    same accounting as before, just split so a swing to the opposite extreme can't
+    be mistaken for a continuation of the old streak (or silently ignored, which
+    is what happened pre-2026-08-20: the check only ever looked for gap > +threshold,
+    so a large NEGATIVE gap - Meta suddenly much cheaper than Google - satisfied
+    neither the original trigger nor the fast-iterate override, no matter how
+    large or how many days it ran; Nikhil caught this live on 2026-08-19's -48.1%
+    gap, itself the third straight day past -10% with the pass still sitting in a
+    stale stabilization hold).
+    Returns (consecutive_meta_worse, consecutive_google_worse, gap_today,
+    meta_cpbl_today, google_cpbl_today)."""
+    cm = cg = 0
+    gap_today = meta_today = google_today = None
     for i in range(13, -1, -1):  # walk backwards from d1
         date_str = (d1 - datetime.timedelta(days=i)).isoformat()
         day = war_room.get(date_str, {})
@@ -249,30 +281,41 @@ def _consecutive_days_over(war_room, d1, threshold):
         if mc and gc and mc > 0:
             gap = (mc - gc) / mc
             if gap > threshold:
-                consecutive += 1
+                cm += 1; cg = 0
+            elif gap < -threshold:
+                cg += 1; cm = 0
             else:
-                consecutive = 0
+                cm = 0; cg = 0
             if i == 0:
-                gap_today = gap
-                meta_cpbl_today = mc
-                google_cpbl_today = gc
-    return consecutive, gap_today, meta_cpbl_today, google_cpbl_today
+                gap_today, meta_today, google_today = gap, mc, gc
+    return cm, cg, gap_today, meta_today, google_today
 
 
 def check_trigger(war_room, d1):
-    """Base trigger: gap > TRIGGER_GAP(10%) for TRIGGER_DAYS(3) consecutive days.
-    Returns (fires, gap_today, consecutive_days, meta_cpbl, google_cpbl)."""
-    consecutive, gap_today, meta_cpbl, google_cpbl = _consecutive_days_over(war_room, d1, TRIGGER_GAP)
-    fires = consecutive >= TRIGGER_DAYS
-    return fires, gap_today, consecutive, meta_cpbl, google_cpbl
+    """Base trigger: |gap| > TRIGGER_GAP(10%) for TRIGGER_DAYS(3) consecutive days,
+    either direction. Returns (fires, direction, gap_today, consecutive_days,
+    meta_cpbl, google_cpbl). direction is 'META_TO_GOOGLE' (Meta worse - the
+    original, only direction before 2026-08-20), 'GOOGLE_TO_META' (Google worse),
+    or None if neither streak has reached TRIGGER_DAYS."""
+    cm, cg, gap_today, meta_cpbl, google_cpbl = _consecutive_days_direction(war_room, d1, TRIGGER_GAP)
+    if cm >= TRIGGER_DAYS:
+        return True, 'META_TO_GOOGLE', gap_today, cm, meta_cpbl, google_cpbl
+    if cg >= TRIGGER_DAYS:
+        return True, 'GOOGLE_TO_META', gap_today, cg, meta_cpbl, google_cpbl
+    return False, None, gap_today, max(cm, cg), meta_cpbl, google_cpbl
 
 
 def check_fast_iterate(war_room, d1):
-    """Override: gap > FAST_ITERATE_GAP(10%) for TRIGGER_DAYS(3) consecutive days ->
-    don't settle into (or stay in) stabilization; keep iterating every
-    STEP_CADENCE_DAYS instead. Returns (fires, gap_today, consecutive_days)."""
-    consecutive, gap_today, _, _ = _consecutive_days_over(war_room, d1, FAST_ITERATE_GAP)
-    return consecutive >= TRIGGER_DAYS, gap_today, consecutive
+    """Override: |gap| > FAST_ITERATE_GAP(10%) for TRIGGER_DAYS(3) consecutive days,
+    either direction -> don't settle into (or stay in) stabilization; keep
+    iterating every STEP_CADENCE_DAYS instead. Returns (fires, direction,
+    gap_today, consecutive_days)."""
+    cm, cg, gap_today, _, _ = _consecutive_days_direction(war_room, d1, FAST_ITERATE_GAP)
+    if cm >= TRIGGER_DAYS:
+        return True, 'META_TO_GOOGLE', gap_today, cm
+    if cg >= TRIGGER_DAYS:
+        return True, 'GOOGLE_TO_META', gap_today, cg
+    return False, None, gap_today, max(cm, cg)
 
 
 def compute_stab_end(last_step_date_str, last_step_time_str):
@@ -303,49 +346,58 @@ def compute_stab_end(last_step_date_str, last_step_time_str):
 
 # ---- sizing + distribution (v2.0) ----
 
-def compute_shift_target(gap, meta_total_budget, google_total_budget):
+def compute_shift_target(abs_gap, source_total_budget, dest_total_budget):
     """Channel-level ceiling for this step, BEFORE distributing across multiple
     source/destination ad sets/campaigns (each capped at their own 15% inside
-    allocate())."""
-    step_pct = min(gap / 2, MAX_STEP_PCT)
-    term_meta_ch   = step_pct * meta_total_budget
-    term_google_ch = MAX_STEP_PCT * google_total_budget
-    return min(term_meta_ch, term_google_ch)
+    allocate()). `abs_gap` is the gap MAGNITUDE (caller passes abs(gap)) -
+    `source` is whichever channel is currently worse (drawn from, sized by
+    min(abs_gap/2, 15%) of its total), `dest` is whichever is currently better
+    (funded into, capped at a flat 15% of its total) - direction-agnostic,
+    same formula either way round."""
+    step_pct = min(abs_gap / 2, MAX_STEP_PCT)
+    term_source = step_pct * source_total_budget
+    term_dest   = MAX_STEP_PCT * dest_total_budget
+    return min(term_source, term_dest)
 
 
-def rank_meta_sources(meta_budgets, meta_eff):
-    """All in-scope Meta ad sets (BFC-VOLUME AND RETARGETING) ranked worst-CPBL-first.
-    RETARGETING became eligible 2026-07-13 - two independent reads (point-in-time
-    CPBL and the 2-week trend) agreed it was the weakest Meta performer, not just a
-    thin-sample blip. Ad sets without enough data for a CPBL read sort last - cut a
+def rank_worst_cpbl_first(budgets, eff):
+    """In-scope ad sets/campaigns ranked worst-CPBL-first - for whichever channel
+    is currently the SOURCE (being trimmed). Originally Meta-only (RETARGETING
+    became eligible 2026-07-13 - two independent reads, point-in-time CPBL and
+    the 2-week trend, agreed it was the weakest Meta performer, not just a
+    thin-sample blip); genericized 2026-08-20 so the same ranking - and the same
+    zero-BC handling - applies when Google is the source (Meta the destination)
+    too. Ad sets/campaigns without enough data for a CPBL read sort last - cut a
     known-bad performer before an unknown one.
 
-    Zero-BC ad sets are NOT automatically "insufficient data" (see
+    Zero-BC entries are NOT automatically "insufficient data" (see
     ZERO_BOOKING_SPEND_FLOOR note above) - above the spend floor, zero bookings on
     real spend is confirmed-worst (cpbl=inf, sorts FIRST), not unknown (cpbl=None,
     sorts last). Below the floor, still genuinely too thin to judge - unchanged."""
     rows = []
-    for name, d in meta_budgets.items():
-        eff = meta_eff.get(name, {'spend': 0.0, 'bc': 0})
-        if eff['bc'] > 0:
-            cpbl = eff['spend'] / eff['bc']
-        elif eff['spend'] >= ZERO_BOOKING_SPEND_FLOOR:
+    for name, d in budgets.items():
+        e = eff.get(name, {'spend': 0.0, 'bc': 0})
+        if e['bc'] > 0:
+            cpbl = e['spend'] / e['bc']
+        elif e['spend'] >= ZERO_BOOKING_SPEND_FLOOR:
             cpbl = float('inf')
         else:
             cpbl = None
-        rows.append({'name': name, 'budget': d['daily_budget'], 'cpbl': cpbl, 'bc': eff['bc']})
+        rows.append({'name': name, 'budget': d['daily_budget'], 'cpbl': cpbl, 'bc': e['bc']})
     rows.sort(key=lambda r: (r['cpbl'] is None, -(r['cpbl'] or 0)))
     return rows
 
 
-def rank_google_destinations(google_budgets, google_eff):
-    """In-scope Google campaigns ranked best-CPBL-first. Unknown-CPBL sorts last -
-    fund a proven performer before an unknown one."""
+def rank_best_cpbl_first(budgets, eff):
+    """In-scope ad sets/campaigns ranked best-CPBL-first - for whichever channel is
+    currently the DESTINATION (being funded into). Originally Google-only;
+    genericized 2026-08-20 for the Meta-as-destination case. Unknown-CPBL sorts
+    last - fund a proven performer before an unknown one."""
     rows = []
-    for name, d in google_budgets.items():
-        eff = google_eff.get(name, {'spend': 0.0, 'bc': 0})
-        cpbl = (eff['spend'] / eff['bc']) if eff['bc'] > 0 else None
-        rows.append({'name': name, 'budget': d['daily_budget'], 'cpbl': cpbl, 'bc': eff['bc']})
+    for name, d in budgets.items():
+        e = eff.get(name, {'spend': 0.0, 'bc': 0})
+        cpbl = (e['spend'] / e['bc']) if e['bc'] > 0 else None
+        rows.append({'name': name, 'budget': d['daily_budget'], 'cpbl': cpbl, 'bc': e['bc']})
     rows.sort(key=lambda r: (r['cpbl'] is None, r['cpbl'] if r['cpbl'] is not None else 0))
     return rows
 
@@ -368,11 +420,12 @@ def allocate(target_rs, ranked_rows):
     return allocations, target_rs - remaining
 
 
-def pause_candidates(ranked_meta_sources):
-    """Advisory only: Meta ad sets whose CPBL is >= PAUSE_CANDIDATE_MULT times the
-    best in-scope Meta CPBL. Never sized into the automatic allocation - pausing an
-    ad set entirely is always a human call."""
-    known = [r for r in ranked_meta_sources if r['cpbl'] is not None]
+def pause_candidates(ranked_source):
+    """Advisory only: source-channel ad sets/campaigns whose CPBL is >=
+    PAUSE_CANDIDATE_MULT times the best in-scope source-channel CPBL. Never sized
+    into the automatic allocation - pausing an ad set/campaign entirely is always
+    a human call. Generic over source channel since 2026-08-20 (was Meta-only)."""
+    known = [r for r in ranked_source if r['cpbl'] is not None]
     if not known: return []
     best = min(r['cpbl'] for r in known)
     return [r for r in known if r['cpbl'] >= best * PAUSE_CANDIDATE_MULT]
@@ -425,35 +478,43 @@ def fmt_cpbl(v):
 
 
 def msg_trigger(gap, consecutive, meta_cpbl, google_cpbl, target_rs,
-                meta_allocs, google_allocs, pauses, step_n=1):
-    total_meta = sum(a['amount'] for a in meta_allocs)
-    total_goog = sum(a['amount'] for a in google_allocs)
+                source_allocs, dest_allocs, pauses, direction, step_n=1):
+    """direction: 'META_TO_GOOGLE' (Meta worse, the original/only direction before
+    2026-08-20) or 'GOOGLE_TO_META' (Google worse). source_allocs are drawn FROM
+    (the worse channel), dest_allocs are funded INTO (the better channel) -
+    caller passes the right pair for the direction; this function just labels."""
+    source_label = SOURCE_LABEL[direction]
+    dest_label = DEST_LABEL[direction]
+    total_source = sum(a['amount'] for a in source_allocs)
+    total_dest = sum(a['amount'] for a in dest_allocs)
     lines = [
-        ':arrows_counterclockwise: *Budget Shift Pass* - *TRIGGER FIRES*',
+        ':arrows_counterclockwise: *Budget Shift Pass* - *TRIGGER FIRES* '
+        f'({source_label} -> {dest_label})',
         '',
         '*Channel CPBL (7-day rolling, Branch-attributed):*',
         f'  Meta: {fmt_rs(meta_cpbl)}  |  Google: {fmt_rs(google_cpbl)}',
-        f'  Gap: {gap*100:.1f}%  >10% for {consecutive} consecutive days',
+        f'  Gap: {gap*100:+.1f}%  |{abs(gap)*100:.1f}%| > 10% for {consecutive} consecutive days '
+        f'({source_label} worse)',
         '',
-        f'*Step {step_n}: move up to {fmt_rs(target_rs)}/day - worst Meta CPBL first, '
-        'into best Google CPBL first, each capped at 15% of its own budget:*',
+        f'*Step {step_n}: move up to {fmt_rs(target_rs)}/day - worst {source_label} CPBL first, '
+        f'into best {dest_label} CPBL first, each capped at 15% of its own budget:*',
         '',
-        '*Reduce (Meta):*',
+        f'*Reduce ({source_label}):*',
     ]
-    for a in meta_allocs:
+    for a in source_allocs:
         lines.append(f'  `{a["name"]}`  -{fmt_rs(a["amount"])}/day  (CPBL {fmt_cpbl(a["cpbl"])})')
-    if not meta_allocs:
-        lines.append('  _no eligible Meta ad set found_')
-    lines += ['', f'  Total reduced: {fmt_rs(total_meta)}/day', '', '*Fund (Google):*']
-    for a in google_allocs:
+    if not source_allocs:
+        lines.append(f'  _no eligible {source_label} ad set/campaign found_')
+    lines += ['', f'  Total reduced: {fmt_rs(total_source)}/day', '', f'*Fund ({dest_label}):*']
+    for a in dest_allocs:
         lines.append(f'  `{a["name"]}`  +{fmt_rs(a["amount"])}/day  (CPBL {fmt_cpbl(a["cpbl"])})')
-    if not google_allocs:
-        lines.append('  _no eligible Google campaign found_')
-    lines += ['', f'  Total funded: {fmt_rs(total_goog)}/day']
+    if not dest_allocs:
+        lines.append(f'  _no eligible {dest_label} ad set/campaign found_')
+    lines += ['', f'  Total funded: {fmt_rs(total_dest)}/day']
 
     if pauses:
         lines += ['', ':bulb: *Pause candidates* '
-                  f'(CPBL >= {PAUSE_CANDIDATE_MULT:.0f}x your best Meta ad set - '
+                  f'(CPBL >= {PAUSE_CANDIDATE_MULT:.0f}x your best {source_label} ad set/campaign - '
                   'consider pausing entirely rather than just trimming; advisory only, not sized above):']
         for r in pauses:
             lines.append(f'  `{r["name"]}`  CPBL {fmt_cpbl(r["cpbl"])}  ({r["bc"]} bookings/7d)')
@@ -488,31 +549,41 @@ def msg_monitoring(step_n, flags, gap, next_step_date):
 
 def msg_gap_closed(gap, step_n):
     return (f':white_check_mark: *Budget Shift Pass* - gap closed, stopping shift.\n'
-            f'  Gap now {gap*100:.1f}% (at or below the {FAST_ITERATE_GAP*100:.0f}% fast-iterate threshold) after Step {step_n}.\n'
+            f'  Gap now {gap*100:+.1f}% (magnitude at or below the {FAST_ITERATE_GAP*100:.0f}% '
+            f'fast-iterate threshold) after Step {step_n}.\n'
             f'  Entering 7-day stabilization window. No new shifts until stabilization completes.')
 
 
 def msg_stabilization(days_remaining, gap):
     return (f':hourglass_flowing_sand: *Budget Shift Pass* - stabilization active.\n'
-            f'  {days_remaining} day(s) remaining.  Gap today: {gap*100:.1f}%\n'
+            f'  {days_remaining} day(s) remaining.  Gap today: {gap*100:+.1f}%\n'
             f'  No new shifts until stabilization completes.')
 
 
-def msg_stabilization_broken(gap, consecutive):
-    return (f':rotating_light: *Budget Shift Pass* - stabilization broken early.\n'
-            f'  Gap has been > {FAST_ITERATE_GAP*100:.0f}% for {consecutive} consecutive days '
-            f'(today: {gap*100:.1f}%) - resuming iteration instead of waiting out the remaining window.')
+def msg_stabilization_broken(gap, consecutive, direction):
+    label = SOURCE_LABEL[direction]
+    return (f':rotating_light: *Budget Shift Pass* - stabilization broken early ({label} worse).\n'
+            f'  Gap magnitude has been > {FAST_ITERATE_GAP*100:.0f}% for {consecutive} consecutive days '
+            f'(today: {gap*100:+.1f}%) - resuming iteration instead of waiting out the remaining window.')
+
+
+def msg_shift_reversed(old_direction, new_direction, gap, step_n):
+    old_label, new_label = SOURCE_LABEL[old_direction], SOURCE_LABEL[new_direction]
+    return (f':rotating_light: *Budget Shift Pass* - gap reversed direction, stopping shift.\n'
+            f'  Was moving {old_label} -> {DEST_LABEL[old_direction]} (Step {step_n}); '
+            f'{new_label} is now the worse channel instead (today: {gap*100:+.1f}%). '
+            f'Stopping rather than continue pushing the old direction against current data.')
 
 
 def msg_stabilization_complete(gap):
-    fires = gap > TRIGGER_GAP
-    tail = f'  Gap is {gap*100:.1f}% - trigger {"will re-evaluate tomorrow" if fires else "below threshold, no action"}.'
+    fires = abs(gap) > TRIGGER_GAP
+    tail = f'  Gap is {gap*100:+.1f}% - trigger {"will re-evaluate tomorrow" if fires else "below threshold, no action"}.'
     return (f':white_check_mark: *Budget Shift Pass* - stabilization complete.\n{tail}')
 
 
 def msg_clean(gap, consecutive):
     return (f':white_check_mark: *Budget Shift Pass* - no trigger.\n'
-            f'  Gap: {gap*100:.1f}%  |  Consecutive days >10%: {consecutive}/{TRIGGER_DAYS} needed')
+            f'  Gap: {gap*100:+.1f}%  |  Consecutive days |gap|>10%: {consecutive}/{TRIGGER_DAYS} needed')
 
 
 # ---- CSV log ----
@@ -558,26 +629,51 @@ def slack_post(text, dm_only=False):
 
 # ---- shared: start a fresh shift from a firing trigger ----
 
-def start_new_shift(gap, consecutive, meta_cpbl, google_cpbl, d1, run_time_ist, dry_run):
-    """Builds step-1 allocations, saves state (unless dry_run), returns the Slack message."""
+def _compute_step_allocations(gap, direction, d1):
+    """Shared by start_new_shift() and the in-progress-shift continuation in main()
+    (2026-08-20) - both need the identical fetch/size/rank/allocate sequence for a
+    step, differing only in what happens to state afterward (initialize step=1 vs
+    increment). Kept as one function so the two paths can't drift apart the way
+    the old duplicated-inline version could have. direction ('META_TO_GOOGLE' or
+    'GOOGLE_TO_META') decides which channel is the source (drawn from,
+    worst-CPBL-first) and which is the destination (funded into, best-CPBL-first).
+    Returns (target_rs, source_allocs, dest_allocs, pauses, meta_allocs, google_allocs)."""
     meta_budgets   = get_meta_budgets()
     google_budgets = get_google_budgets()
     meta_total   = sum(d['daily_budget'] for d in meta_budgets.values() if d['type'] != 'RETARGETING')  # channel ceiling stays gap-driven, unrelated to which ad sets are eligible sources
     google_total = sum(d['daily_budget'] for d in google_budgets.values())
     meta_eff, google_eff = get_efficiency_data(d1)
 
-    target_rs = compute_shift_target(gap, meta_total, google_total)
-    meta_ranked  = rank_meta_sources(meta_budgets, meta_eff)
-    google_ranked = rank_google_destinations(google_budgets, google_eff)
-    meta_allocs, _  = allocate(target_rs, meta_ranked)
-    google_allocs, _ = allocate(target_rs, google_ranked)
-    pauses = pause_candidates(meta_ranked)
+    if direction == 'META_TO_GOOGLE':
+        source_budgets, source_eff, source_total = meta_budgets, meta_eff, meta_total
+        dest_budgets, dest_eff, dest_total = google_budgets, google_eff, google_total
+    else:  # GOOGLE_TO_META
+        source_budgets, source_eff, source_total = google_budgets, google_eff, google_total
+        dest_budgets, dest_eff, dest_total = meta_budgets, meta_eff, meta_total
+
+    target_rs = compute_shift_target(abs(gap), source_total, dest_total)
+    source_ranked = rank_worst_cpbl_first(source_budgets, source_eff)
+    dest_ranked = rank_best_cpbl_first(dest_budgets, dest_eff)
+    source_allocs, _ = allocate(target_rs, source_ranked)
+    dest_allocs, _ = allocate(target_rs, dest_ranked)
+    pauses = pause_candidates(source_ranked)
+
+    meta_allocs, google_allocs = (
+        (source_allocs, dest_allocs) if direction == 'META_TO_GOOGLE' else (dest_allocs, source_allocs))
+    return target_rs, source_allocs, dest_allocs, pauses, meta_allocs, google_allocs
+
+
+def start_new_shift(gap, consecutive, meta_cpbl, google_cpbl, d1, run_time_ist, dry_run, direction):
+    """Builds step-1 allocations, saves state (unless dry_run), returns the Slack message."""
+    target_rs, source_allocs, dest_allocs, pauses, meta_allocs, google_allocs = \
+        _compute_step_allocations(gap, direction, d1)
 
     next_step_date = (d1 + datetime.timedelta(days=STEP_CADENCE_DAYS)).isoformat()
     state = {
         'phase': 'shift',
         'shift': {
             'initiated_date':  d1.isoformat(),
+            'direction':       direction,
             'step':            1,
             'meta_allocations':   meta_allocs,
             'google_allocations': google_allocs,
@@ -590,11 +686,12 @@ def start_new_shift(gap, consecutive, meta_cpbl, google_cpbl, d1, run_time_ist, 
     }
     if not dry_run:
         save_state(state)
-        src = '; '.join(f'{a["name"]} -{a["amount"]:.0f}' for a in meta_allocs)
-        dst = '; '.join(f'{a["name"]} +{a["amount"]:.0f}' for a in google_allocs)
-        append_log(d1.isoformat(), gap, sum(a['amount'] for a in meta_allocs), src, dst, 1)
+        src = '; '.join(f'{a["name"]} -{a["amount"]:.0f}' for a in source_allocs)
+        dst = '; '.join(f'{a["name"]} +{a["amount"]:.0f}' for a in dest_allocs)
+        append_log(d1.isoformat(), gap, sum(a['amount'] for a in source_allocs),
+                   f'{SOURCE_LABEL[direction]}: {src}', f'{DEST_LABEL[direction]}: {dst}', 1)
     return msg_trigger(gap, consecutive, meta_cpbl, google_cpbl, target_rs,
-                        meta_allocs, google_allocs, pauses, step_n=1)
+                        source_allocs, dest_allocs, pauses, direction, step_n=1)
 
 
 # ---- main ----
@@ -658,22 +755,24 @@ def main():
 
     state = load_state()
     war_room = get_war_room(d1)
-    fires, gap, consecutive, meta_cpbl, google_cpbl = check_trigger(war_room, d1)
+    fires, direction, gap, consecutive, meta_cpbl, google_cpbl = check_trigger(war_room, d1)
     msg = None
     phase = state.get('phase', 'none')
 
     # ---- stabilization ----
     if phase == 'stabilization':
-        fast_fires, fast_gap, fast_consecutive = check_fast_iterate(war_room, d1)
+        fast_fires, fast_direction, fast_gap, fast_consecutive = check_fast_iterate(war_room, d1)
         stab_end = datetime.date.fromisoformat(state['stabilization_end'])
         days_left = (stab_end - d1).days
         if fast_fires:
             # Gap re-widened past FAST_ITERATE_GAP for 3 consecutive days while
             # parked in stabilization - break out early and resume iterating
             # immediately, same run, rather than waiting for the window to lapse.
-            broken_msg = msg_stabilization_broken(fast_gap or 0, fast_consecutive)
+            # 2026-08-20: fast_direction may be either channel now, not just Meta.
+            broken_msg = msg_stabilization_broken(fast_gap or 0, fast_consecutive, fast_direction)
             if fires and gap is not None:
-                started_msg = start_new_shift(gap, consecutive, meta_cpbl, google_cpbl, d1, run_time_ist, args.dry_run)
+                started_msg = start_new_shift(gap, consecutive, meta_cpbl, google_cpbl, d1, run_time_ist,
+                                               args.dry_run, direction)
                 msg = broken_msg + '\n\n' + started_msg
             else:
                 if not args.dry_run:
@@ -691,14 +790,30 @@ def main():
     elif phase == 'shift':
         shift = state['shift']
         step_n = shift['step']
+        # default for state files predating the 2026-08-20 bidirectional change
+        shift_direction = shift.get('direction', 'META_TO_GOOGLE')
         next_step = datetime.date.fromisoformat(shift['next_step_date'])
         flags = check_monitoring(war_room, d1)
 
         if d1 >= next_step:
-            # Re-evaluate gap at step boundary. Cools to <= FAST_ITERATE_GAP(10%)
-            # -> settle into stabilization; still above it -> keep iterating
-            # every STEP_CADENCE_DAYS.
-            if gap is not None and gap <= FAST_ITERATE_GAP:
+            # Re-evaluate gap at step boundary, in order:
+            #  1) has the gap reversed to the OTHER direction for a full confirmed
+            #     streak (direction is not None and != shift_direction)? Stop this
+            #     shift and start fresh the other way rather than keep pushing the
+            #     old direction against what the data now says.
+            #  2) else has |gap| cooled to <= FAST_ITERATE_GAP(10%)? Settle into
+            #     stabilization.
+            #  3) else still above threshold, same direction -> keep iterating.
+            # (2026-08-20: step 2 used to be `gap <= FAST_ITERATE_GAP` un-abs'd -
+            # a large NEGATIVE gap satisfied that too, so a hard reversal read as
+            # "gap closed" instead of "the other channel is now worse." Step 1
+            # exists specifically to catch that case before step 2 can misfire.)
+            if direction is not None and direction != shift_direction:
+                reversed_msg = msg_shift_reversed(shift_direction, direction, gap, step_n)
+                started_msg = start_new_shift(gap, consecutive, meta_cpbl, google_cpbl, d1, run_time_ist,
+                                               args.dry_run, direction)
+                msg = reversed_msg + '\n\n' + started_msg
+            elif gap is not None and abs(gap) <= FAST_ITERATE_GAP:
                 stab_end = compute_stab_end(shift['last_step_date'], shift.get('last_step_time'))
                 state = {'phase': 'stabilization', 'shift': None, 'stabilization_end': stab_end}
                 if not args.dry_run:
@@ -708,22 +823,16 @@ def main():
                 msg = msg_monitoring(step_n, flags, gap or 0, next_step.isoformat())
                 # Don't advance step; hold for human review
             else:
-                meta_budgets   = get_meta_budgets()
-                google_budgets = get_google_budgets()
-                meta_total   = sum(d['daily_budget'] for d in meta_budgets.values() if d['type'] != 'RETARGETING')  # channel ceiling stays gap-driven, unrelated to which ad sets are eligible sources
-                google_total = sum(d['daily_budget'] for d in google_budgets.values())
-                meta_eff, google_eff = get_efficiency_data(d1)
-
-                target_rs = compute_shift_target(gap, meta_total, google_total)
-                meta_ranked   = rank_meta_sources(meta_budgets, meta_eff)
-                google_ranked = rank_google_destinations(google_budgets, google_eff)
-                meta_allocs, _   = allocate(target_rs, meta_ranked)
-                google_allocs, _ = allocate(target_rs, google_ranked)
-                pauses = pause_candidates(meta_ranked)
+                target_rs, source_allocs, dest_allocs, pauses, meta_allocs, google_allocs = \
+                    _compute_step_allocations(gap, shift_direction, d1)
 
                 next_step_n = step_n + 1
                 next_step_date = (d1 + datetime.timedelta(days=STEP_CADENCE_DAYS)).isoformat()
                 state['shift']['step'] = next_step_n
+                # backfill for state files predating the 2026-08-20 bidirectional change,
+                # so the field is self-documenting going forward instead of relying
+                # forever on the shift.get(..., 'META_TO_GOOGLE') default at read time
+                state['shift']['direction'] = shift_direction
                 state['shift']['meta_allocations'] = meta_allocs
                 state['shift']['google_allocations'] = google_allocs
                 state['shift']['last_step_date'] = d1.isoformat()
@@ -731,11 +840,13 @@ def main():
                 state['shift']['next_step_date'] = next_step_date
                 if not args.dry_run:
                     save_state(state)
-                    src = '; '.join(f'{a["name"]} -{a["amount"]:.0f}' for a in meta_allocs)
-                    dst = '; '.join(f'{a["name"]} +{a["amount"]:.0f}' for a in google_allocs)
-                    append_log(d1.isoformat(), gap, sum(a['amount'] for a in meta_allocs), src, dst, next_step_n)
+                    src = '; '.join(f'{a["name"]} -{a["amount"]:.0f}' for a in source_allocs)
+                    dst = '; '.join(f'{a["name"]} +{a["amount"]:.0f}' for a in dest_allocs)
+                    append_log(d1.isoformat(), gap, sum(a['amount'] for a in source_allocs),
+                               f'{SOURCE_LABEL[shift_direction]}: {src}', f'{DEST_LABEL[shift_direction]}: {dst}',
+                               next_step_n)
                 msg = msg_trigger(gap, consecutive, meta_cpbl, google_cpbl, target_rs,
-                                  meta_allocs, google_allocs, pauses, step_n=next_step_n)
+                                  source_allocs, dest_allocs, pauses, shift_direction, step_n=next_step_n)
         else:
             # Between steps: monitoring only
             msg = msg_monitoring(step_n, flags, gap or 0, next_step.isoformat())
@@ -743,7 +854,7 @@ def main():
     # ---- no active shift: check trigger ----
     else:
         if fires and gap is not None:
-            msg = start_new_shift(gap, consecutive, meta_cpbl, google_cpbl, d1, run_time_ist, args.dry_run)
+            msg = start_new_shift(gap, consecutive, meta_cpbl, google_cpbl, d1, run_time_ist, args.dry_run, direction)
         else:
             msg = msg_clean(gap or 0, consecutive)
 
