@@ -105,7 +105,11 @@ def main():
     d1 = datetime.date.fromisoformat(args.date) if args.date else datetime.date.fromisoformat(prod_entry['date'])
 
     state = load_state()
-    if not args.dry_run and state.get('last_diffed') == d1.isoformat():
+    # --date is a deliberate manual override (matches rule_pass.py/budget_shift_pass.py's own
+    # idempotent guards, both of which already skip themselves when --date is passed) - without
+    # this, a corrected-data backfill re-run for a date already diffed today gets silently
+    # blocked by the same guard meant to stop the unattended schedule from double-firing.
+    if not args.dry_run and not args.date and state.get('last_diffed') == d1.isoformat():
         print(f'already diffed {d1} - skipping (idempotent retry guard)')
         return
 
