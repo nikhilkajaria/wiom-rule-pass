@@ -605,6 +605,9 @@ def main():
     ap.add_argument('--dm-only', action='store_true')
     ap.add_argument('--date', help='override anchor date YYYY-MM-DD')
     ap.add_argument('--reset', action='store_true', help='clear shift state and exit')
+    ap.add_argument('--no-post', action='store_true',
+                     help='run for real (write state/log) but skip Slack - for backfilling on corrected '
+                          'data without re-notifying; print the message instead of posting it')
     ap.add_argument('--last-retry', action='store_true',
                      help='final scheduled attempt of the day - alert if dashboard data is still not ready, '
                           'instead of quietly postponing to the next retry')
@@ -745,7 +748,7 @@ def main():
             msg = msg_clean(gap or 0, consecutive)
 
     print(msg)
-    if not args.dry_run:
+    if not args.dry_run and not args.no_post:
         slack_post(msg, dm_only=args.dm_only)
         if not args.date:
             from dashboard_readiness import mark_completed_today

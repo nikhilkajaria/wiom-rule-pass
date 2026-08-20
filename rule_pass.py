@@ -1034,6 +1034,9 @@ def main():
     ap.add_argument('--dry-run', action='store_true', help='print the message, do not post or write log')
     ap.add_argument('--dm-only', action='store_true', help='post to the DM copy only (testing), skip the channel')
     ap.add_argument('--date', help='override D-1 anchor YYYY-MM-DD (default = yesterday IST)')
+    ap.add_argument('--no-post', action='store_true',
+                     help='run for real (write log/state) but skip Slack - for backfilling logs on corrected '
+                          'data without re-notifying; print the message instead of posting it')
     ap.add_argument('--last-retry', action='store_true',
                      help='final scheduled attempt of the day - alert if dashboard data is still not ready, '
                           'instead of quietly postponing to the next retry')
@@ -1127,7 +1130,7 @@ def main():
         unacted = retro_check(load_log(), d1, still_flagged_today=still_flagged_today)  # read-only check for display
 
     msg = msg_daily(res, cstar, end, unacted=unacted) if args.mode == 'daily' else msg_weekly(res, cstar, start, end)
-    if args.dry_run: print(msg)
+    if args.dry_run or args.no_post: print(msg)
     else: slack_post(msg, dm_only=args.dm_only)
 
     if args.mode == 'daily' and not args.dry_run and not args.date:

@@ -92,6 +92,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--dry-run', action='store_true', help='print the message, do not post or write state')
     ap.add_argument('--date', help='override; default = latest date in production kill_pass_log.json')
+    ap.add_argument('--no-post', action='store_true',
+                     help='run for real (write state) but skip Slack - for backfilling on corrected data '
+                          'without re-notifying; print the message instead of posting it')
     args = ap.parse_args()
     rp.load_env()
 
@@ -115,7 +118,9 @@ def main():
     if args.dry_run:
         print(msg)
     else:
-        rp.slack_post(msg, dm_only=True)  # hardcoded - this script never posts to the channel
+        print(msg)
+        if not args.no_post:
+            rp.slack_post(msg, dm_only=True)  # hardcoded - this script never posts to the channel
         state['last_diffed'] = d1.isoformat()
         save_state(state)
 
