@@ -20,18 +20,6 @@
     ],
     "google_allocations": [
       {
-        "name": "GOOGLE_BA_DEL_SCALE_ABO_SEARCH_L1_03072026",
-        "amount": 300.0,
-        "cpbl": 14340.375370999998,
-        "bc": 1
-      },
-      {
-        "name": "GOOGLE_BA_DEL_SCALE_ABO_SEARCH_P2_05072026",
-        "amount": 75.0,
-        "cpbl": 3186.241508,
-        "bc": 1
-      },
-      {
         "name": "GOOGLE_BA_DEL_SCALE_ABO_SEARCH_L2_04072026",
         "amount": 150.0,
         "cpbl": 1617.8664699999997,
@@ -45,7 +33,7 @@
       },
       {
         "name": "GOOGLE_BA_DEL_SCALE_ABO_UAC_BFC-VOLUME_010626",
-        "amount": 6030.0,
+        "amount": 6405.0,
         "cpbl": 1155.234297780899,
         "bc": 534
       }
