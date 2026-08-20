@@ -1241,5 +1241,28 @@
     "date": "2026-08-18",
     "median_cpbc": 1117.09,
     "recos": []
+  },
+  {
+    "date": "2026-08-19",
+    "median_cpbc": 1158.48,
+    "recos": [
+      {
+        "concept_id": "AUG26-C-116",
+        "layer": "L2",
+        "need": "MCR",
+        "verdict": "KILL",
+        "reason": "efficiency (> 1.0x median Rs1,158)",
+        "cpbc": 1198.95,
+        "bc": 5,
+        "spend": 5994.75,
+        "median_at_time": 1158.48,
+        "top_spender": false,
+        "ad_ids": [
+          "120251468732320343"
+        ],
+        "action_taken": null,
+        "action_timing": null
+      }
+    ]
   }
 ]
