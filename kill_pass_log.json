@@ -1244,21 +1244,21 @@
   },
   {
     "date": "2026-08-19",
-    "median_cpbc": 1158.48,
+    "median_cpbc": 1062.72,
     "recos": [
       {
-        "concept_id": "AUG26-C-116",
+        "concept_id": "AUG26-C-114",
         "layer": "L2",
         "need": "MCR",
         "verdict": "KILL",
-        "reason": "efficiency (> 1.0x median Rs1,158)",
-        "cpbc": 1198.95,
-        "bc": 5,
-        "spend": 5994.75,
-        "median_at_time": 1158.48,
+        "reason": "efficiency (> 1.0x median Rs1,063)",
+        "cpbc": 1118.53,
+        "bc": 58,
+        "spend": 64874.63,
+        "median_at_time": 1062.72,
         "top_spender": false,
         "ad_ids": [
-          "120251468732320343"
+          "120251345778270343"
         ],
         "action_taken": null,
         "action_timing": null
