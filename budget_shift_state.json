@@ -1,47 +1,5 @@
 {
-  "phase": "shift",
-  "shift": {
-    "initiated_date": "2026-08-19",
-    "direction": "GOOGLE_TO_META",
-    "step": 1,
-    "meta_allocations": [
-      {
-        "name": "DEL_ALL_PBFC_L1-L2-L3_BROAD_MULTI_APPSTORE_ABO_BFC-VOLUME_MULTI_NA",
-        "amount": 5600.0,
-        "cpbl": 956.0537410071943,
-        "bc": 278
-      },
-      {
-        "name": "DEL_ALL_BFC_L0-L1-L2_RMKT-VV75-MAST90_BOOKNOW_APPSTORE_ABO_RETARGETING_MULTI_NA",
-        "amount": 1500.0,
-        "cpbl": 1028.4487939698495,
-        "bc": 199
-      }
-    ],
-    "google_allocations": [
-      {
-        "name": "GOOGLE_BA_DEL_SCALE_ABO_SEARCH_L2_04072026",
-        "amount": 150.0,
-        "cpbl": 1617.8664699999997,
-        "bc": 2
-      },
-      {
-        "name": "GOOGLE_BA_DEL_SCALE_ABO_SEARCH_BRAND_01072026",
-        "amount": 600.0,
-        "cpbl": 1608.4932416666668,
-        "bc": 18
-      },
-      {
-        "name": "GOOGLE_BA_DEL_SCALE_ABO_UAC_BFC-VOLUME_010626",
-        "amount": 6400.0,
-        "cpbl": 1155.234297780899,
-        "bc": 534
-      }
-    ],
-    "trigger_gap_pct": -48.1,
-    "last_step_date": "2026-08-19",
-    "last_step_time": "2026-08-20T23:34:00+05:30",
-    "next_step_date": "2026-08-20"
-  },
-  "stabilization_end": null
+  "phase": "stabilization",
+  "shift": null,
+  "stabilization_end": "2026-08-26"
 }
