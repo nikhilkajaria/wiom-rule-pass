@@ -1,5 +1,53 @@
 {
-  "phase": "stabilization",
-  "shift": null,
-  "stabilization_end": "2026-08-26"
+  "phase": "shift",
+  "shift": {
+    "initiated_date": "2026-08-24",
+    "direction": "META_TO_GOOGLE",
+    "step": 1,
+    "meta_allocations": [
+      {
+        "name": "BHARAT_LUCKNOW_SPL_L1-L2-L3_BROAD_BOOKNOW_APPSTORE_ABO_BFC-VOLUME_MULTI_NA",
+        "amount": 750.0,
+        "cpbl": Infinity,
+        "bc": 0
+      },
+      {
+        "name": "BHARAT_MEERUT_AI_L1-L2-L3_BROAD_BOOKNOW_APPSTORE_ABO_BFC-VOLUME_MULTI_NA",
+        "amount": 255.0,
+        "cpbl": 3921.9566666666665,
+        "bc": 3
+      },
+      {
+        "name": "BHARAT_ALL_SPL_L1-L2-L3_BROAD_MULTI_APPSTORE_ABO_BFC-VOLUME_MULTI_NA",
+        "amount": 1275.0,
+        "cpbl": 2614.4569565217394,
+        "bc": 23
+      },
+      {
+        "name": "DEL_ALL_PBFC_L1-L2-L3_BROAD_MULTI_APPSTORE_ABO_BFC-VOLUME_MULTI_NA",
+        "amount": 6296.077265973254,
+        "cpbl": 1101.9412500000003,
+        "bc": 256
+      }
+    ],
+    "google_allocations": [
+      {
+        "name": "GOOGLE_BA_DEL_SCALE_ABO_DEMANDGEN_YT_BFC_VOLUME_10062026",
+        "amount": 1125.0,
+        "cpbl": 542.6817864795918,
+        "bc": 98
+      },
+      {
+        "name": "GOOGLE_BA_DEL_SCALE_ABO_UAC_BFC-VOLUME_010626",
+        "amount": 7451.077265973254,
+        "cpbl": 1134.0779899847905,
+        "bc": 526
+      }
+    ],
+    "trigger_gap_pct": 29.4,
+    "last_step_date": "2026-08-24",
+    "last_step_time": "2026-08-25T14:16:44.983058+00:00",
+    "next_step_date": "2026-08-25"
+  },
+  "stabilization_end": null
 }
