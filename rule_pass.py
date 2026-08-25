@@ -653,7 +653,24 @@ def get_last_activation_dates(d1, active_now=None):
     # eventually got the JUN26-T-048/T-050 event (dated 2026-08-05, correct) days after
     # this pass first needed it - so this isn't hypothetical, it's the exact ordering that
     # would otherwise silently corrupt a date the log later resolves correctly.
-    merged = dict(from_log)
+    #
+    # EXCEPTION (2026-08-25, JUN26-C-073 incident): the above assumes from_log, when it has
+    # a date, is simply "not yet caught up" - but it can instead be flat-out stale: the
+    # log's own last known event for a concept can end on a pause (-> Inactive), i.e. the
+    # log itself believes the concept is currently paused, while active_now says it's live.
+    # That's not a precision gap, it's a missed event entirely - a brake/kill decision built
+    # on that from_log date would be judging the concept's spend/CPBC from its PRIOR
+    # activation cycle (here, June) instead of its real one. Detect that specific
+    # contradiction and fall through to from_snapshot for just those concepts, same as a
+    # genuine gap - this does not touch the 2026-08-08 case at all, since there the log's
+    # last known state was consistent with being active (no contradiction), just late.
+    def _log_thinks_inactive(cid):
+        evs = sorted(events.get(cid, []), key=lambda e: e.get('ts', e['date']))
+        return bool(evs) and evs[-1]['to'] != 'Active'
+    stale_log = {cid for cid in from_log if active_now and cid in active_now and _log_thinks_inactive(cid)}
+    if stale_log:
+        print(f'log has a stale last-activation date (log thinks paused, live is active) for {len(stale_log)}: {sorted(stale_log)}')
+    merged = {cid: d for cid, d in from_log.items() if cid not in stale_log}
     for cid, d in from_snapshot.items():
         if cid not in merged:
             merged[cid] = d
