@@ -84,6 +84,20 @@ PAUSE_CANDIDATE_MULT = 2.0    # flag a Meta source as a pause candidate at >= th
 # rule_pass.py. Below this floor, cpbl stays None (genuinely too new/thin to judge, sorts
 # last as before) - only real, meaningful spend with zero return gets treated as confirmed-worst.
 ZERO_BOOKING_SPEND_FLOOR = 5000  # Rs 7-day spend; 0 BC above this = confirmed worst (inf), not unknown
+# v2.3 (2026-08-25, Nikhil): a brand-new, deliberately-launched ad set (e.g. a strategic
+# geo test) was showing up as a reduce SOURCE on day one, before it could possibly have
+# earned bookings - punished for being new, not for being bad. Ad sets younger than this
+# are excluded entirely from rank_worst_cpbl_first, regardless of spend or CPBL.
+# TENSION, read before changing: this partially undoes the 2026-08-14 ZERO_BOOKING_SPEND_FLOOR
+# fix above, whose own worked example was a 5-6-day-old BHARAT_LUCKNOW ad set that Nikhil
+# explicitly ruled should NOT get a pass ("real spend + zero bookings is the single clearest
+# bad-performer signal ... must never be treated as unknown, judge later"). At 7 days here,
+# that same-aged case would now be exempted - the two decisions genuinely conflict, not just
+# in appearance. Kept at 7 to match rule_pass.py's AGE_GRACE_DAYS convention, but this is a
+# judgment call Nikhil made once and is now making differently for a specific strategic ad
+# set - if a future non-strategic new ad set starts bleeding real spend for a full week under
+# this grace period, that's this exact tension resurfacing, not a new bug.
+AD_SET_AGE_GRACE_DAYS = 7
 MONITORING_THRESH    = 0.20   # flag if metric moves >20% on both DoD and WoW
 DASH_BASE            = 'https://growth-portal.up.railway.app'
 META_ACC_DEFAULT     = '2007675312900454'
@@ -100,6 +114,25 @@ GOOGLE_TOF_EXCLUDE = ['AWARENESS']  # exclude ToF from budget pool
 _DIR = os.path.dirname(os.path.abspath(__file__))
 STATE_PATH      = os.path.join(_DIR, 'budget_shift_state.json')
 ACTION_LOG_PATH = os.path.join(_DIR, 'budget_shift_log.csv')
+# v2.3: Meta/Google's own "created" field is the ad set/campaign OBJECT's original creation
+# date, not when it started running under its current name/purpose - ad set shells get
+# renamed and repurposed rather than recreated (confirmed live 2026-08-25: BHARAT_LUCKNOW_AI
+# reused a shell created 2026-08-08, but had zero spend/bookings as of the swap - genuinely
+# brand new operationally, API said 17 days old). Manual override, same pattern as
+# rule_pass.py's activation-state backfill: {ad_set_or_campaign_name: 'YYYY-MM-DD'}, checked
+# before falling back to the API's created_time/start_date.
+AD_SET_AGE_OVERRIDE_PATH = os.path.join(_DIR, 'ad_set_age_overrides.json')
+
+
+def _load_age_overrides():
+    if os.path.exists(AD_SET_AGE_OVERRIDE_PATH):
+        try:
+            with open(AD_SET_AGE_OVERRIDE_PATH, encoding='utf-8') as f:
+                raw = json.load(f)
+            return {k: datetime.date.fromisoformat(v) for k, v in raw.items()}
+        except Exception:
+            pass
+    return {}
 
 
 # ---- env ----
@@ -197,21 +230,30 @@ def get_meta_budgets():
     with urllib.request.urlopen(url, timeout=30) as r:
         camps = json.loads(r.read().decode()).get('data', [])
 
-    budgets = {}  # adset_name -> {id, daily_budget, campaign_type}
+    overrides = _load_age_overrides()
+    budgets = {}  # adset_name -> {id, daily_budget, campaign_type, created_date}
     for c in camps:
         if c.get('effective_status') != 'ACTIVE': continue
         cname = c.get('name', '').upper()
         ctype = next((t for t in META_IN_SCOPE if t in cname), None)
         if not ctype: continue
         url2 = (f'https://graph.facebook.com/{ver}/{c["id"]}/adsets?'
-                f'fields=id,name,effective_status,daily_budget&limit=100&access_token={tok}')
+                f'fields=id,name,effective_status,daily_budget,created_time&limit=100&access_token={tok}')
         with urllib.request.urlopen(url2, timeout=30) as r:
             adsets = json.loads(r.read().decode()).get('data', [])
         for a in adsets:
             if a.get('effective_status') != 'ACTIVE': continue
             db = int(a.get('daily_budget') or 0) / 100
             if db > 0:
-                budgets[a['name']] = {'id': a['id'], 'daily_budget': db, 'type': ctype}
+                if a['name'] in overrides:
+                    created_date = overrides[a['name']]
+                else:
+                    created_date = None
+                    ct = a.get('created_time')
+                    if ct:
+                        try: created_date = datetime.date.fromisoformat(ct[:10])
+                        except Exception: created_date = None
+                budgets[a['name']] = {'id': a['id'], 'daily_budget': db, 'type': ctype, 'created_date': created_date}
     return budgets
 
 
@@ -230,9 +272,10 @@ def get_google_budgets():
         client = GoogleAdsClient.load_from_dict(config)
         ga = client.get_service('GoogleAdsService')
         cid = config['login_customer_id']
-        query = '''SELECT campaign.id, campaign.name, campaign_budget.amount_micros
+        query = '''SELECT campaign.id, campaign.name, campaign_budget.amount_micros, campaign.start_date
                    FROM campaign WHERE campaign.status = ENABLED
                    ORDER BY campaign_budget.amount_micros DESC'''
+        overrides = _load_age_overrides()
         budgets = {}
         for row in ga.search(customer_id=cid, query=query):
             name  = row.campaign.name
@@ -241,7 +284,14 @@ def get_google_budgets():
             ctype = next((t for t in GOOGLE_IN_SCOPE if t in name_up), None)
             if not ctype: continue
             daily_rs = row.campaign_budget.amount_micros / 1_000_000
-            budgets[name] = {'id': str(row.campaign.id), 'daily_budget': daily_rs, 'type': ctype}
+            if name in overrides:
+                created_date = overrides[name]
+            else:
+                created_date = None
+                if row.campaign.start_date:
+                    try: created_date = datetime.date.fromisoformat(row.campaign.start_date)
+                    except Exception: created_date = None
+            budgets[name] = {'id': str(row.campaign.id), 'daily_budget': daily_rs, 'type': ctype, 'created_date': created_date}
         return budgets
     except Exception as e:
         print(f'warn: Google Ads budgets unavailable - {e}')
@@ -360,7 +410,7 @@ def compute_shift_target(abs_gap, source_total_budget, dest_total_budget):
     return min(term_source, term_dest)
 
 
-def rank_worst_cpbl_first(budgets, eff):
+def rank_worst_cpbl_first(budgets, eff, d1=None):
     """In-scope ad sets/campaigns ranked worst-CPBL-first - for whichever channel
     is currently the SOURCE (being trimmed). Originally Meta-only (RETARGETING
     became eligible 2026-07-13 - two independent reads, point-in-time CPBL and
@@ -373,9 +423,17 @@ def rank_worst_cpbl_first(budgets, eff):
     Zero-BC entries are NOT automatically "insufficient data" (see
     ZERO_BOOKING_SPEND_FLOOR note above) - above the spend floor, zero bookings on
     real spend is confirmed-worst (cpbl=inf, sorts FIRST), not unknown (cpbl=None,
-    sorts last). Below the floor, still genuinely too thin to judge - unchanged."""
+    sorts last). Below the floor, still genuinely too thin to judge - unchanged.
+
+    v2.3: ad sets younger than AD_SET_AGE_GRACE_DAYS (by created_date) are excluded
+    from this ranking entirely - see the tension noted at that constant's definition
+    before changing it. d1=None (no date to judge age against) skips the age filter
+    rather than excluding everyone - callers that don't pass d1 get the pre-v2.3
+    behavior."""
     rows = []
     for name, d in budgets.items():
+        if d1 and d.get('created_date') and (d1 - d['created_date']).days < AD_SET_AGE_GRACE_DAYS:
+            continue
         e = eff.get(name, {'spend': 0.0, 'bc': 0})
         if e['bc'] > 0:
             cpbl = e['spend'] / e['bc']
@@ -652,7 +710,7 @@ def _compute_step_allocations(gap, direction, d1):
         dest_budgets, dest_eff, dest_total = meta_budgets, meta_eff, meta_total
 
     target_rs = compute_shift_target(abs(gap), source_total, dest_total)
-    source_ranked = rank_worst_cpbl_first(source_budgets, source_eff)
+    source_ranked = rank_worst_cpbl_first(source_budgets, source_eff, d1)
     dest_ranked = rank_best_cpbl_first(dest_budgets, dest_eff)
     source_allocs, _ = allocate(target_rs, source_ranked)
     dest_allocs, _ = allocate(target_rs, dest_ranked)
