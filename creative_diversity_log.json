@@ -28,15 +28,5 @@
   "concepts_to_80pct": 4,
   "active_pool_size": 9,
   "distinct_active_clusters": 5
- },
- {
-  "date": "2026-08-25",
-  "new_concept_count": 18,
-  "distinct_new_clusters": 10,
-  "stuck_count": 2,
-  "top2_share": 56.3,
-  "concepts_to_80pct": 4,
-  "active_pool_size": 9,
-  "distinct_active_clusters": 5
  }
 ]
