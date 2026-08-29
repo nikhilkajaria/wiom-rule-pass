@@ -272,7 +272,20 @@ def get_google_budgets():
         client = GoogleAdsClient.load_from_dict(config)
         ga = client.get_service('GoogleAdsService')
         cid = config['login_customer_id']
-        query = '''SELECT campaign.id, campaign.name, campaign_budget.amount_micros, campaign.start_date
+        # v2.3 REGRESSION (2026-08-25 23:15 -> found 2026-08-30): 'campaign.start_date' is not
+        # a valid queryable field in this account's GAQL schema ("Unrecognized field in the
+        # query"). Google Ads raises on the WHOLE query when this happens, and the broad
+        # except below swallows it and returns {} - so this single bad field silently zeroed
+        # out the entire Google budget pool for every run from 2026-08-26 onward (confirmed:
+        # the Aug25 23:15 IST commit that added this field is the last commit before the very
+        # next scheduled run, Aug26 16:10 IST, started posting "Rs0/day, no eligible ad
+        # set/campaign found" - a real, on-platform-looking result that was actually a fetch
+        # failure, not a legitimate zero). Dropped the field entirely rather than hunt for the
+        # "correct" name under time pressure - Google-side campaigns just get created_date=None
+        # (no automatic age-grace signal) unless manually set via ad_set_age_overrides.json,
+        # same as before this feature existed. Meta's created_time fetch is unaffected (only
+        # this Google query used start_date) and keeps working as designed.
+        query = '''SELECT campaign.id, campaign.name, campaign_budget.amount_micros
                    FROM campaign WHERE campaign.status = ENABLED
                    ORDER BY campaign_budget.amount_micros DESC'''
         overrides = _load_age_overrides()
@@ -284,13 +297,7 @@ def get_google_budgets():
             ctype = next((t for t in GOOGLE_IN_SCOPE if t in name_up), None)
             if not ctype: continue
             daily_rs = row.campaign_budget.amount_micros / 1_000_000
-            if name in overrides:
-                created_date = overrides[name]
-            else:
-                created_date = None
-                if row.campaign.start_date:
-                    try: created_date = datetime.date.fromisoformat(row.campaign.start_date)
-                    except Exception: created_date = None
+            created_date = overrides.get(name)
             budgets[name] = {'id': str(row.campaign.id), 'daily_budget': daily_rs, 'type': ctype, 'created_date': created_date}
         return budgets
     except Exception as e:

@@ -117,6 +117,27 @@ ACTIVATION_STATE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 # silently propagate through the other.
 STATUS_SNAPSHOT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'creative_status_snapshot.json')
 
+# ---- manual last-activation override (v2.9, 2026-08-29) ----
+# Confirmed live (JUN26-T-064): the Activity Log can miss BOTH the pause and the
+# reactivation of a cycle entirely, not just one side of it - its last logged event
+# already said 'Active' (from 2026-07-28), so there's no pause-then-reactivate PAIR to
+# derive a fresh date from, even though a real pause and a real reactivation both
+# happened in between. Synthesizing a fake 'Inactive' event with a made-up date to force
+# the pairing would fabricate history - refused deliberately, don't do that. This override
+# instead states the known-true fact directly: {concept_id: 'YYYY-MM-DD'}, wins over
+# whatever the log derives, same pattern as budget_shift_pass.py's ad_set_age_overrides.json.
+ACTIVATION_OVERRIDE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'creative_activation_overrides.json')
+
+
+def _load_activation_overrides():
+    if os.path.exists(ACTIVATION_OVERRIDE_PATH):
+        try:
+            with open(ACTIVATION_OVERRIDE_PATH, encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
 
 def load_env():
     path = r'C:\credentials\.env'
@@ -677,6 +698,11 @@ def get_last_activation_dates(d1, active_now=None):
     newly_caught = set(from_snapshot) - set(from_log)
     if newly_caught:
         print(f'snapshot-diff caught {len(newly_caught)} reactivation(s) the Activity Log missed: {sorted(newly_caught)}')
+
+    overrides = _load_activation_overrides()
+    if overrides:
+        print(f'manual activation-date override applied for {len(overrides)}: {sorted(overrides)}')
+        merged.update(overrides)
     return merged
 
 
