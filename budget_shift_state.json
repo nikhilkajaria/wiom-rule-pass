@@ -3,13 +3,13 @@
   "shift": {
     "initiated_date": "2026-08-24",
     "direction": "META_TO_GOOGLE",
-    "step": 2,
+    "step": 3,
     "meta_allocations": [],
     "google_allocations": [],
     "trigger_gap_pct": 29.4,
-    "last_step_date": "2026-08-25",
-    "last_step_time": "2026-08-26T16:10:41.817203+00:00",
-    "next_step_date": "2026-08-26"
+    "last_step_date": "2026-08-28",
+    "last_step_time": "2026-08-29T19:12:36.623945+00:00",
+    "next_step_date": "2026-08-29"
   },
   "stabilization_end": null
 }
