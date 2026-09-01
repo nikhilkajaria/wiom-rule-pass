@@ -612,6 +612,30 @@ def msg_monitoring(step_n, flags, gap, next_step_date):
     return '\n'.join(lines)
 
 
+def msg_direction_contradicted(shift_direction, gap, step_n, consecutive, next_step_date):
+    """v2.11 (2026-09-02, Nikhil): today's single-day gap disagrees with the shift's
+    ongoing direction, but hasn't been confirmed for a full 3-day reversal yet (see
+    msg_shift_reversed for when it has). Confirmed live 2026-08-31: a GOOGLE_TO_META
+    shift's step-continuation branch didn't check this at all - it kept sizing and
+    executing steps in the OLD direction using TODAY'S gap MAGNITUDE, even on a day
+    whose SIGN said Google was the cheaper channel, because 'not yet a confirmed
+    reversal' was being treated as 'no reason not to continue' instead of 'no reason
+    to act either way.' The 3-day confirmation threshold exists to avoid whipsawing on
+    noise before reversing - it was never meant to justify executing new money against
+    what today's own data says. This holds instead: no new step, no state change,
+    same as a monitoring-flags hold."""
+    old_label = SOURCE_LABEL[shift_direction]
+    today_label = SOURCE_LABEL['META_TO_GOOGLE'] if gap > 0 else SOURCE_LABEL['GOOGLE_TO_META']
+    return (f':warning: *Budget Shift Pass* - holding Step {step_n} (Step {step_n} in progress), direction contradicted.\n'
+            f'  This shift has been reducing {old_label} since it started, but today\'s gap ({gap*100:+.1f}%) says '
+            f'{today_label} is the worse channel instead - only {consecutive} day(s) so far, not yet the 3 needed to '
+            f'confirm a reversal.\n'
+            f'  Not executing a new step against contradicted data. If {today_label} stays worse tomorrow and the day '
+            f'after, this will flip to a confirmed reversal and start a fresh shift the other way. If {old_label} '
+            f'goes back to being worse, this resumes the original direction on schedule.\n'
+            f'  _No budget change recommended this run._')
+
+
 def msg_gap_closed(gap, step_n):
     return (f':white_check_mark: *Budget Shift Pass* - gap closed, stopping shift.\n'
             f'  Gap now {gap*100:+.1f}% (magnitude at or below the {FAST_ITERATE_GAP*100:.0f}% '
@@ -873,6 +897,9 @@ def main():
             # a large NEGATIVE gap satisfied that too, so a hard reversal read as
             # "gap closed" instead of "the other channel is now worse." Step 1
             # exists specifically to catch that case before step 2 can misfire.)
+            today_gap_direction = None
+            if gap is not None and abs(gap) > FAST_ITERATE_GAP:
+                today_gap_direction = 'META_TO_GOOGLE' if gap > 0 else 'GOOGLE_TO_META'
             if direction is not None and direction != shift_direction:
                 reversed_msg = msg_shift_reversed(shift_direction, direction, gap, step_n)
                 started_msg = start_new_shift(gap, consecutive, meta_cpbl, google_cpbl, d1, run_time_ist,
@@ -884,6 +911,15 @@ def main():
                 if not args.dry_run:
                     save_state(state)
                 msg = msg_gap_closed(gap, step_n)
+            elif today_gap_direction is not None and today_gap_direction != shift_direction:
+                # v2.11: today's gap disagrees with the ongoing shift direction but isn't
+                # (yet) a confirmed 3-day reversal - hold rather than execute a new step
+                # sized off data that contradicts the direction it would be applied to.
+                # Must be checked before the monitoring-flags hold and the plain
+                # continue-same-direction fallback, since either of those would otherwise
+                # execute right through this exact contradiction (confirmed live 2026-08-31).
+                msg = msg_direction_contradicted(shift_direction, gap, step_n, consecutive, next_step.isoformat())
+                # Don't advance step; hold for the next scheduled check, same as monitoring
             elif flags:
                 msg = msg_monitoring(step_n, flags, gap or 0, next_step.isoformat())
                 # Don't advance step; hold for human review
