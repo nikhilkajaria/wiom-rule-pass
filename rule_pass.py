@@ -848,11 +848,34 @@ def decide(data, age, cstar, active, funnel_geo=None, variant='lifetime'):
             verdict[c] = 'MONITOR'
     # v2.2.0: is this candidate #1 or #2 by 7-day spend AND >10% pool share - moved ahead
     # of the daily-cap loop (v2.6.0) so it can gate kills, not just label them afterward.
+    # v2.10 (2026-09-01, Nikhil): raw w7s (a 7-day SUM) unfairly buries a creative that
+    # hasn't existed for the full window - confirmed live on AUG26-T-122 (created 2026-08-26
+    # per Meta, 5 days old at evaluation): its raw w7s (Rs48,406) ranked #3, but its spend
+    # PER ACTIVE DAY (Rs9,681) already beat JUN26-T-063's actual daily rate (Rs54,186/7 =
+    # Rs7,741) - T-063 only out-summed it by having 2 more days in the window to accumulate,
+    # not by spending faster. That's tenure, not scale, and the protection was built to catch
+    # scale. Ranking now uses each candidate's OWN daily rate over its own active days,
+    # projected to a full 7-day window (implied_w7s = daily_rate * 7) - a creative running
+    # its true pace the whole week would represent this much spend. Denominator
+    # (pool_total_w7s) stays the REAL observed pool total, not similarly projected - that
+    # keeps the >10% bar meaning "a real dollar share of what the pool actually spent," just
+    # slightly harder to clear for a ramping-up creative than an inflated denominator would
+    # be, which is the conservative direction for a protection mechanism. age.get(c,7)
+    # defaults to 7 (no behavior change) for anything the age dict doesn't cover; floored at
+    # 1 to avoid a same-day divide-by-zero; capped at 7 so a creative older than the window
+    # doesn't get an artificially deflated daily rate from days outside it - for anything
+    # that's already been running the full 7+ days this reduces to the original raw w7s
+    # exactly (denominator becomes 7, projected back up by *7 cancels out), so T-048/T-063
+    # and every other week-plus-old creative are completely unaffected by this change.
     pool_w7s = {c: pool[c]['w7s'] for c in spent if act(c)}
     pool_total_w7s = sum(pool_w7s.values())
-    top2 = sorted(pool_w7s, key=lambda c: -pool_w7s[c])[:2]
+    def _daily_rate(c):
+        days = min(max(age.get(c, 7), 1), 7)
+        return pool_w7s[c] / days
+    implied_w7s = {c: _daily_rate(c) * 7 for c in pool_w7s}
+    top2 = sorted(implied_w7s, key=lambda c: -implied_w7s[c])[:2]
     def is_top_spender(c):
-        return c in top2 and pool_total_w7s > 0 and pool_w7s[c] / pool_total_w7s > TOP_SPENDER_SHARE
+        return c in top2 and pool_total_w7s > 0 and implied_w7s[c] / pool_total_w7s > TOP_SPENDER_SHARE
 
     # v2.2.0: daily kill cap - rank by ratio (worst first), kill top DAILY_KILL_CAP, defer rest to MONITOR
     # v2.6.0 (2026-07-30, Nikhil): a top-spender-flagged candidate is now NEVER auto-killed at
