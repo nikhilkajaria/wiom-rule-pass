@@ -1528,9 +1528,14 @@
         "ad_ids": [
           "120249677199700343"
         ],
-        "action_taken": null,
-        "action_timing": null
+        "action_taken": "Yes",
+        "action_timing": "Late"
       }
     ]
+  },
+  {
+    "date": "2026-09-02",
+    "median_cpbc": 1204.96,
+    "recos": []
   }
 ]
