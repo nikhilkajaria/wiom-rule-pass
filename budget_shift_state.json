@@ -3,45 +3,45 @@
   "shift": {
     "initiated_date": "2026-08-29",
     "direction": "GOOGLE_TO_META",
-    "step": 3,
+    "step": 4,
     "meta_allocations": [
       {
         "name": "DEL_ALL_BFC_L0-L1-L2_RMKT-VV75-MAST90_BOOKNOW_APPSTORE_ABO_RETARGETING_MULTI_NA",
         "amount": 5100.0,
-        "cpbl": 762.1904230769231,
-        "bc": 260
+        "cpbl": 801.2266412213739,
+        "bc": 262
       },
       {
         "name": "DEL_ALL_PBFC_L1-L2-L3_BROAD_MULTI_APPSTORE_ABO_BFC-VOLUME_MULTI_NA",
         "amount": 3045.0,
-        "cpbl": 1109.7926839826835,
-        "bc": 231
+        "cpbl": 1174.7740528634363,
+        "bc": 227
       }
     ],
     "google_allocations": [
       {
         "name": "GOOGLE_BA_DEL_SCALE_ABO_SEARCH_L2_04072026",
         "amount": 127.5,
-        "cpbl": 4886.959032,
+        "cpbl": 5557.025718000001,
         "bc": 1
       },
       {
         "name": "GOOGLE_BA_DEL_SCALE_ABO_SEARCH_BRAND_01072026",
         "amount": 600.0,
-        "cpbl": 1579.8216061333335,
-        "bc": 15
+        "cpbl": 1858.2468067692312,
+        "bc": 13
       },
       {
         "name": "GOOGLE_BA_DEL_SCALE_ABO_UAC_BFC-VOLUME_010626",
         "amount": 7417.5,
-        "cpbl": 1191.0394572,
-        "bc": 510
+        "cpbl": 1191.746024123314,
+        "bc": 519
       }
     ],
     "trigger_gap_pct": -56.8,
-    "last_step_date": "2026-09-02",
-    "last_step_time": "2026-09-03T18:11:44.880443+00:00",
-    "next_step_date": "2026-09-03"
+    "last_step_date": "2026-09-03",
+    "last_step_time": "2026-09-04T18:05:34.257474+00:00",
+    "next_step_date": "2026-09-04"
   },
   "stabilization_end": null
 }
