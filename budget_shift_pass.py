@@ -467,10 +467,33 @@ def rank_best_cpbl_first(budgets, eff):
     return rows
 
 
+ROUND_UNIT_SMALL = 50    # for an ad set/campaign whose OWN current budget is itself "in hundreds"
+ROUND_UNIT_LARGE = 100   # for everything else (budget already in the thousands+)
+ROUND_UNIT_SMALL_CEILING = 1000  # budget below this = "in hundreds" -> use the 50 unit
+
+
+def _round_down_to_unit(amount, own_budget):
+    """Nikhil has been manually rounding every step's line items to neat hundreds
+    (or fifties, for a small-budget ad set/campaign where a flat 100 would be too
+    coarse a step relative to its own scale) before entering them in Ads Manager -
+    see manual_budget_changes.csv history (e.g. 2026-08-14: 'Applied as -1,250
+    (rounded), pass recommended -1,462'). Built into the pass itself (2026-09-05,
+    Nikhil) so the output is already what gets typed in, not a number that still
+    needs hand-rounding every time. Always rounds the MAGNITUDE down (toward
+    zero) - matches the established pattern of always being a little less
+    aggressive than the precise computed number, never more."""
+    unit = ROUND_UNIT_SMALL if own_budget < ROUND_UNIT_SMALL_CEILING else ROUND_UNIT_LARGE
+    return (amount // unit) * unit
+
+
 def allocate(target_rs, ranked_rows):
     """Greedily draw from (or fund into) ranked_rows in the order given, each
     capped at MAX_STEP_PCT of its own budget, until target_rs is met or the
-    list is exhausted. Returns (allocations, total_allocated)."""
+    list is exhausted. Each allocation is rounded down to a neat unit (see
+    _round_down_to_unit) before being counted against target_rs, so a rounded-
+    to-zero allocation is skipped rather than appearing as a no-op line, and the
+    running total reflects what's actually being recommended, not the raw
+    pre-rounding figure. Returns (allocations, total_allocated)."""
     remaining = target_rs
     allocations = []
     for r in ranked_rows:
@@ -479,6 +502,9 @@ def allocate(target_rs, ranked_rows):
         cap = r['budget'] * MAX_STEP_PCT
         amount = min(cap, remaining)
         if amount <= 0.5:
+            continue
+        amount = _round_down_to_unit(amount, r['budget'])
+        if amount <= 0:
             continue
         allocations.append({'name': r['name'], 'amount': amount, 'cpbl': r['cpbl'], 'bc': r['bc']})
         remaining -= amount
