@@ -652,7 +652,15 @@ def get_last_activation_dates(d1, active_now=None):
     state = _load_activation_state()
     last_checked = state.get('last_checked')
     since = CAMPAIGN_START if not last_checked else last_checked
-    new_events = _fetch_activity_events(since, d1.isoformat())
+    # v2.11 (2026-09-05, Nikhil): Meta's activities `until` is exclusive/start-of-day -
+    # until=d1.isoformat() returns ZERO events for d1 itself (verified live: querying
+    # until="2026-09-03" for JUN26-T-009's known 2026-09-03T07:56 reactivation returns
+    # nothing; until="2026-09-04" returns it). That's not a rare race, it's a
+    # deterministic, every-time miss of any reactivation happening on the same calendar
+    # day being evaluated - root cause of the 2026-09-04 false brake alert on
+    # JUN26-T-003/T-009/T-043 (all three reactivated 2026-09-03, the exact d1 that run
+    # was judging). Fetch through d1+1 so d1's own full day is actually included.
+    new_events = _fetch_activity_events(since, (d1 + datetime.timedelta(days=1)).isoformat())
     events = state.setdefault('events', {})
     for cid, evs in new_events.items():
         existing = events.setdefault(cid, [])
