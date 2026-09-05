@@ -1085,6 +1085,67 @@ def build_cstar_tracking_msg(data, active, cstar, end):
     return "\n".join(lines)
 
 
+MATURITY_CURVE = {0: 0.45, 1: 0.51, 2: 0.53, 3: 0.54, 4: 0.56, 5: 0.565, 6: 0.58, 7: 0.62,
+                   8: 0.66, 9: 0.70, 10: 0.74, 11: 0.78, 12: 0.82, 13: 0.86, 14: 0.90, 17: 0.95, 21: 0.98}
+# Cumulative fraction of a day's eventual bookings landed by N days later - built from
+# booking_lag_cohort (2026-06 to 2026-09), assuming the day-to-day lag mix is roughly
+# stationary (confirmed: D0/D7+ splits barely move week to week over the pulled range).
+# Days 7-21 are interpolated between the D7plus catch-all and an assumed ~full maturity
+# by day 21 - not directly measured (the API buckets D7+ as one catch-all), so treat this
+# tail as an approximation until it's validated against a longer/more granular pull.
+L7_AVG_MATURITY = sum(MATURITY_CURVE[d] for d in range(7)) / 7  # ~0.534, avg age of a rolling 7d window's days
+
+def maturity_fraction(age_days):
+    if age_days in MATURITY_CURVE: return MATURITY_CURVE[age_days]
+    keys = sorted(MATURITY_CURVE)
+    if age_days <= keys[0]: return MATURITY_CURVE[keys[0]]
+    if age_days >= keys[-1]: return 1.0
+    for i in range(len(keys) - 1):
+        lo, hi = keys[i], keys[i + 1]
+        if lo <= age_days <= hi:
+            frac = (age_days - lo) / (hi - lo)
+            return MATURITY_CURVE[lo] + frac * (MATURITY_CURVE[hi] - MATURITY_CURVE[lo])
+    return 1.0
+
+
+def build_maturity_tracking_msg(data, age, active, end):
+    """Phase 1 of the maturity-adjustment proposal (2026-09-05, Nikhil): pure
+    observation, zero effect on any kill/review/prune decision - same treatment as
+    build_cstar_tracking_msg, and answering a different question (how accurately CPBC
+    is measured, not what it's compared against). Reports raw CPBC next to a
+    maturity-projected CPBC (projected_bc = bc / maturity_fraction(age), correcting
+    for the ~35-45% of bookings that land 7+ days after the install that drove them -
+    see booking_lag_cohort). Simplified: uses the creative's OVERALL age for the
+    lifetime projection and a fixed average-age constant for the L7 projection, not a
+    full per-spend-day correction (that refinement matters once/if this is ever wired
+    into a real decision - not needed for observation). DM-only, always."""
+    pool = data.get('Delhi', {})
+    rows = []
+    for cid, rec in pool.items():
+        if active is not None and cid not in active: continue
+        if rec['spend'] <= 0: continue
+        a = age.get(cid, 999)
+        lifetime_raw = cpbc(rec)
+        l7_raw = cpbc_l7(rec)
+        mf = maturity_fraction(a)
+        proj_bc = rec['bc'] / mf if rec['bc'] and mf else 0
+        lifetime_proj = rec['spend'] / proj_bc if proj_bc else float('inf')
+        w7b = rec.get('w7b', 0)
+        proj_w7b = w7b / L7_AVG_MATURITY if w7b else 0
+        l7_proj = rec['w7s'] / proj_w7b if proj_w7b else float('inf')
+        rows.append((cid, a, rec['bc'], lifetime_raw, lifetime_proj, w7b, l7_raw, l7_proj))
+    if not rows:
+        return None
+    rows.sort(key=lambda r: r[1])  # youngest first - correction matters most there
+    def fmt(v): return f"Rs{v:,.0f}" if v != float('inf') else 'inf'
+    lines = [f":microscope: *Maturity-adjustment tracking* ({end}, DEL BOOKNOW BFC-VOLUME) - "
+             f"_observation only, not wired into any kill decision_", ""]
+    for cid, a, bc, life_raw, life_proj, w7b, l7_raw, l7_proj in rows:
+        lines.append(f"   `{cid}` age {a}d, {bc} BC  |  lifetime raw {fmt(life_raw)} -> proj {fmt(life_proj)}"
+                     f"  |  L7 raw {fmt(l7_raw)} -> proj {fmt(l7_proj)}")
+    return "\n".join(lines)
+
+
 def msg_weekly(res, cstar, start, end):
     isos = res['isolates']
     integ = integrity_line(res)
@@ -1243,6 +1304,11 @@ def main():
         if cstar_msg:
             if args.dry_run or args.no_post: print("\n" + cstar_msg)
             else: slack_post(cstar_msg, dm_only=True)  # always DM-only, independent of --dm-only
+
+        maturity_msg = build_maturity_tracking_msg(data, age, active, end)
+        if maturity_msg:
+            if args.dry_run or args.no_post: print("\n" + maturity_msg)
+            else: slack_post(maturity_msg, dm_only=True)  # always DM-only, independent of --dm-only
 
     if args.mode == 'daily' and not args.dry_run and not args.date:
         from dashboard_readiness import mark_completed_today
