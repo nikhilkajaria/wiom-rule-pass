@@ -1046,6 +1046,45 @@ def msg_daily(res, cstar, end, unacted=None):
     return "\n".join(lines)
 
 
+def build_cstar_tracking_msg(data, active, cstar, end):
+    """Phase 1 of the C*-anchoring proposal (2026-09-05, Nikhil): pure observation,
+    zero effect on any kill/review/prune decision. Reports every active creative's
+    lifetime and L7-day CPBC as a ratio to C* (the actual blended business target),
+    separately from the existing peer-median comparison used everywhere else in this
+    file. Purpose: build a real track record of whether/how much of the pool can
+    sustain C*-level performance before ever wiring C* into a kill threshold - see
+    the C*-anchoring design conversation for why (killing on a moving peer-median
+    with zero volume-awareness already misjudged the pool's biggest creative, and
+    an overnight switch to a raw C* line would flag ~9 of 10 active creatives at
+    once given today's pool). DM-only, always - never posted to #growth-reports,
+    independent of --dm-only (which only controls the main kill+prune message)."""
+    pool = data.get('Delhi', {})
+    if not cstar:
+        return None
+    rows = []
+    for cid, rec in pool.items():
+        if active is not None and cid not in active: continue
+        if rec['spend'] <= 0: continue
+        lifetime = cpbc(rec)
+        l7 = cpbc_l7(rec)
+        rows.append((cid, rec['bc'], rec.get('w7b', 0), lifetime, l7))
+    if not rows:
+        return None
+    rows.sort(key=lambda r: (r[4] if r[4] != float('inf') else float('inf')))
+    lines = [f":bar_chart: *C\\* tracking* ({end}, DEL BOOKNOW BFC-VOLUME) - _observation only, not wired into any kill decision_",
+             f"C* (blended target) Rs{cstar:,.0f}", ""]
+    for cid, bc, w7b, lifetime, l7 in rows:
+        life_s = f"Rs{lifetime:,.0f}" if lifetime != float('inf') else 'inf'
+        life_ratio = f"{lifetime/cstar:.2f}x" if lifetime != float('inf') else '-'
+        l7_s = f"Rs{l7:,.0f}" if l7 != float('inf') else 'inf'
+        l7_ratio = f"{l7/cstar:.2f}x" if l7 != float('inf') else '-'
+        lines.append(f"   `{cid}` lifetime {life_s} ({life_ratio} C*, {bc} BC)  |  L7 {l7_s} ({l7_ratio} C*, {w7b} BC)")
+    at_or_below = sum(1 for r in rows if r[4] != float('inf') and r[4] <= cstar)
+    lines.append("")
+    lines.append(f"{at_or_below} of {len(rows)} active creatives at/below C* on L7 basis")
+    return "\n".join(lines)
+
+
 def msg_weekly(res, cstar, start, end):
     isos = res['isolates']
     integ = integrity_line(res)
@@ -1198,6 +1237,12 @@ def main():
     msg = msg_daily(res, cstar, end, unacted=unacted) if args.mode == 'daily' else msg_weekly(res, cstar, start, end)
     if args.dry_run or args.no_post: print(msg)
     else: slack_post(msg, dm_only=args.dm_only)
+
+    if args.mode == 'daily':
+        cstar_msg = build_cstar_tracking_msg(data, active, cstar, end)
+        if cstar_msg:
+            if args.dry_run or args.no_post: print("\n" + cstar_msg)
+            else: slack_post(cstar_msg, dm_only=True)  # always DM-only, independent of --dm-only
 
     if args.mode == 'daily' and not args.dry_run and not args.date:
         from dashboard_readiness import mark_completed_today
