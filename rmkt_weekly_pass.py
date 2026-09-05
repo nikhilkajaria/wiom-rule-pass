@@ -155,8 +155,11 @@ def rmkt_compute(d1, last_activation=None):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--dry-run', action='store_true', help='print the message, do not post')
+    ap.add_argument('--dry-run', action='store_true', help='print the message, do not post or write state')
     ap.add_argument('--date', help='override D-1 anchor YYYY-MM-DD (default = yesterday IST)')
+    ap.add_argument('--last-retry', action='store_true',
+                     help='final scheduled attempt of the day - alert (DM) if dashboard data is still '
+                          'not ready, instead of quietly postponing to the next retry')
     args = ap.parse_args()
 
     rp.load_env()
@@ -165,6 +168,30 @@ def main():
     else:
         now_ist = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=5, minutes=30)
         d1 = (now_ist - datetime.timedelta(days=1)).date()
+
+    # Same dashboard-readiness gate as rule_pass.py's daily run (2026-07-17) - only for a real,
+    # unattended scheduled run, not a --dry-run preview or a --date backtest. Separate
+    # script_name ('rmkt_weekly') so this pass's idempotent-completion tracking never collides
+    # with the daily BFC-VOLUME pass's own state.
+    if not args.dry_run and not args.date:
+        from dashboard_readiness import is_dashboard_data_ready, already_completed_today, mark_completed_today
+        if already_completed_today('rmkt_weekly', d1):
+            print(f'already completed for {d1} - skipping (idempotent retry guard)')
+            return
+        ready, dash_total, actual_total = is_dashboard_data_ready(d1)
+        if not ready:
+            dash_s = f"Rs{dash_total:,.0f}" if dash_total is not None else 'n/a'
+            act_s = f"Rs{actual_total:,.0f}" if actual_total is not None else 'n/a'
+            if args.last_retry:
+                rp.slack_post(
+                    f":rotating_light: *RETARGETING weekly kill+prune* - dashboard data for {d1} still "
+                    f"incomplete after 3 attempts (dashboard spend {dash_s} vs actual Meta+Google spend {act_s}). "
+                    f"Pass did NOT run today - check the dashboard ETL.",
+                    dm_only=True)
+                print(f'last retry - data still not ready for {d1} (dashboard={dash_s}, actual={act_s}) - alerted, giving up for today')
+            else:
+                print(f'dashboard data not ready for {d1} (dashboard={dash_s}, actual={act_s}) - postponing to next retry')
+            return
 
     end = d1.isoformat()
     active, ad_ids_map = rmkt_active_del()
@@ -181,6 +208,9 @@ def main():
         print(msg)
     else:
         rp.slack_post(msg, dm_only=True)  # DM-only, always - not promoted to #growth-reports yet
+        if not args.date:
+            from dashboard_readiness import mark_completed_today
+            mark_completed_today('rmkt_weekly', d1)  # after the post succeeds, so a crash mid-run allows retry
 
 
 if __name__ == '__main__':

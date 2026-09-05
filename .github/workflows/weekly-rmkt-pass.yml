@@ -1,0 +1,68 @@
+name: Weekly RETARGETING kill+prune (DM only)
+
+# Monday-morning review of the RETARGETING ad set, DM-only for now (not promoted to
+# #growth-reports yet - see rmkt_weekly_pass.py). Same 3-attempt dashboard-readiness retry
+# pattern as daily-rule-pass.yml, since rmkt_weekly_pass.py uses the same readiness gate -
+# just all three attempts land on Monday instead of every day.
+#   08:00 UTC Mon = 13:30 IST - attempt 1
+#   10:00 UTC Mon = 15:30 IST - attempt 2
+#   12:00 UTC Mon = 17:30 IST - attempt 3 (last retry - alerts DM instead of quietly
+#                                postponing if data is still not ready)
+on:
+  schedule:
+    - cron: '0 8 * * 1'
+    - cron: '0 10 * * 1'
+    - cron: '0 12 * * 1'
+  workflow_dispatch: {}
+
+jobs:
+  rmkt-weekly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Determine retry attempt
+        id: retry
+        run: |
+          case "${{ github.event.schedule }}" in
+            "0 8 * * 1")  echo "flag=" >> "$GITHUB_OUTPUT" ;;
+            "0 10 * * 1") echo "flag=" >> "$GITHUB_OUTPUT" ;;
+            "0 12 * * 1") echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;
+            *)            echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;  # workflow_dispatch - one shot
+          esac
+      - name: Run weekly RETARGETING pass and post to Slack (DM only)
+        run: python rmkt_weekly_pass.py ${{ steps.retry.outputs.flag }}
+        env:
+          WIOM_DASHBOARD_TOKEN: ${{ secrets.WIOM_DASHBOARD_TOKEN }}
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+          META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          # SLACK_DM_USER_ID defaults to U05A9037VFG. Override here only if it changes.
+      - name: Commit readiness state (idempotency marker)
+        # Same pattern as daily-rule-pass.yml's own commit step - own file
+        # (rmkt_weekly_readiness_state.json), so nothing to merge/conflict against
+        # the daily pass's or budget-shift-pass's own state files.
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          if [ -f rmkt_weekly_readiness_state.json ]; then
+            git add rmkt_weekly_readiness_state.json
+            if ! git diff --cached --quiet; then
+              git commit -m "rmkt-weekly readiness state: $(date -u +%Y-%m-%d)"
+              for i in 1 2 3 4 5; do
+                if git push; then
+                  break
+                fi
+                echo "push rejected (attempt $i) - fetching + merging and retrying"
+                git fetch origin main
+                if ! git merge origin/main --no-edit; then
+                  echo "merge conflict - aborting, will retry next scheduled run"
+                  git merge --abort || true
+                  break
+                fi
+                sleep $((RANDOM % 5 + 1))
+              done
+            fi
+          fi
