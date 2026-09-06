@@ -1,0 +1,65 @@
+name: Weekly BHARAT_ALL_SPL review (DM only)
+
+# Monday-morning review of BHARAT_ALL_SPL, DM-only, advisory (not a kill pass) - see
+# bharat_weekly_pass.py. Same 3-attempt dashboard-readiness retry pattern as
+# weekly-rmkt-pass.yml/daily-rule-pass.yml, all three attempts on Monday.
+#   08:00 UTC Mon = 13:30 IST - attempt 1
+#   10:00 UTC Mon = 15:30 IST - attempt 2
+#   12:00 UTC Mon = 17:30 IST - attempt 3 (last retry - alerts DM instead of quietly
+#                                postponing if data is still not ready)
+on:
+  schedule:
+    - cron: '0 8 * * 1'
+    - cron: '0 10 * * 1'
+    - cron: '0 12 * * 1'
+  workflow_dispatch: {}
+
+jobs:
+  bharat-weekly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Determine retry attempt
+        id: retry
+        run: |
+          case "${{ github.event.schedule }}" in
+            "0 8 * * 1")  echo "flag=" >> "$GITHUB_OUTPUT" ;;
+            "0 10 * * 1") echo "flag=" >> "$GITHUB_OUTPUT" ;;
+            "0 12 * * 1") echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;
+            *)            echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;  # workflow_dispatch - one shot
+          esac
+      - name: Run weekly BHARAT_ALL_SPL review and post to Slack (DM only)
+        run: python bharat_weekly_pass.py ${{ steps.retry.outputs.flag }}
+        env:
+          WIOM_DASHBOARD_TOKEN: ${{ secrets.WIOM_DASHBOARD_TOKEN }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          # SLACK_DM_USER_ID defaults to U05A9037VFG. Override here only if it changes.
+      - name: Commit readiness state (idempotency marker)
+        # Same pattern as weekly-rmkt-pass.yml's own commit step - own file
+        # (bharat_weekly_readiness_state.json), so nothing to merge/conflict against
+        # any other pass's own state files.
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          if [ -f bharat_weekly_readiness_state.json ]; then
+            git add bharat_weekly_readiness_state.json
+            if ! git diff --cached --quiet; then
+              git commit -m "bharat-weekly readiness state: $(date -u +%Y-%m-%d)"
+              for i in 1 2 3 4 5; do
+                if git push; then
+                  break
+                fi
+                echo "push rejected (attempt $i) - fetching + merging and retrying"
+                git fetch origin main
+                if ! git merge origin/main --no-edit; then
+                  echo "merge conflict - aborting, will retry next scheduled run"
+                  git merge --abort || true
+                  break
+                fi
+                sleep $((RANDOM % 5 + 1))
+              done
+            fi
+          fi
