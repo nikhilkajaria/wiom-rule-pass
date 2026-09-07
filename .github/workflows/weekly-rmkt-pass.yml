@@ -38,6 +38,17 @@ jobs:
           WIOM_DASHBOARD_TOKEN: ${{ secrets.WIOM_DASHBOARD_TOKEN }}
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
           META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
+          # dashboard_readiness.py's own actual-spend cross-check needs Google Ads
+          # creds too (get_actual_google_spend_day()) - missing here caused
+          # actual_total to silently come back None ("actual=n/a" in the run log)
+          # on 2026-09-07, so is_dashboard_data_ready() could never return True and
+          # both scheduled runs gave up without ever doing real work. Same mistake
+          # daily-rule-pass.yml already avoided by including all of these.
+          GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
+          GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}
+          GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}
+          GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}
+          GOOGLE_ADS_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_CUSTOMER_ID }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           # SLACK_DM_USER_ID defaults to U05A9037VFG. Override here only if it changes.
       - name: Commit readiness state (idempotency marker)
