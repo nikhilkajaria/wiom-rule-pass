@@ -13,13 +13,15 @@ the wiom-rule-pass session that shipped this (2026-09-05):
    median answers a more honest question: is Bharat improving, holding, or slipping relative to
    itself.
 
-2. CREATIVE-LEVEL output is an ADVISORY ranking, not a kill list. Real data: of 53 creatives that
-   have run in BHARAT_ALL_SPL over 2 months, 34 (64%) never booked a single thing and only 9
-   ever reached 10 lifetime bookings - the PBFC-style "judge every creative against a peer
-   median, kill the bad ones" machinery would leave most of the pool permanently stuck in
-   "insufficient data." Only the ~10-BC-plus subset gets ranked here, against each other's own
-   median (not any external target), and only ever as a "worth a look" label - nothing here
-   recommends a pause.
+2. CREATIVE-LEVEL output is an ADVISORY ranking, not a kill list, against each other's own
+   median (not any external target) - never a "worth a look" label recommending a pause.
+   Revised 2026-09-08 per Nikhil: ranks every live-active creative with >=1 booking in the
+   trailing CREATIVE_WINDOW_DAYS (a current read, not the original lifetime/cumulative one -
+   that buried a creative's recent performance under weeks of old spend/bookings, and hid
+   low-BC-but-real-spend creatives entirely below a 10-BC floor). Zero-booking creatives with
+   real spend get their own spend-ranked section instead of disappearing. Also fixed the same
+   day: the creative pool is now vetted against live Meta effective_status - the ranking used
+   to include paused creatives (caught via JUN26-H-006 showing up despite being paused).
 
 Still open, not solved by this script: BHARAT_ALL_SPL's own conversion-rate instability (svc_true
 -> BC rate ranged 0%-18.2% across creatives with enough serviceable-lead volume to check, far
@@ -37,6 +39,12 @@ import rule_pass as rp
 
 BHARAT_ADSET = "BHARAT_ALL_SPL_L1-L2-L3_BROAD_MULTI_APPSTORE_ABO_BFC-VOLUME_MULTI_NA"
 TRAILING_WEEKS = 8              # weeks of history behind this week, for the geo self-benchmark
+CREATIVE_WINDOW_DAYS = 14       # trailing window for the creative-level ranking - a "current"
+                                 # read, not the lifetime/cumulative view this used to be. Rolling
+                                 # (d1 minus 13 days) rather than Monday-anchored calendar weeks,
+                                 # on purpose - the Sep8 confusion over a mistimed manual run
+                                 # collapsing "this week" to a single day was exactly this kind of
+                                 # calendar-anchoring trap, and a rolling window can't do that.
 SCALE_BAND = 0.15               # within +/-15% of trailing median = HOLD; better = SCALE; worse = WATCH
 
 
@@ -165,10 +173,16 @@ def main():
         geo_line = (f"this week Rs{this_cpbl:,.0f} vs own trailing {TRAILING_WEEKS}-week median "
                     f"Rs{trailing_median:,.0f} ({delta*100:+.0f}%)")
 
-    # --- creative-level: advisory ranking among creatives with real volume (lifetime, full pull window) ---
+    # --- creative-level: advisory ranking among creatives with real volume, trailing
+    # CREATIVE_WINDOW_DAYS only (a current read - not the lifetime/cumulative view this used
+    # to be, which buried a creative's recent performance under weeks of old spend/bookings) ---
     active = bharat_active_del()
+    window_start = d1 - datetime.timedelta(days=CREATIVE_WINDOW_DAYS - 1)
     by_cid = collections.defaultdict(lambda: {'spend': 0.0, 'bc': 0})
     for r in rows:
+        rdate = datetime.date.fromisoformat(r['date'])
+        if rdate < window_start:
+            continue
         m = rp.CONCEPT_RE.search(r.get('creative', '') or '')
         if not m:
             continue
@@ -193,6 +207,8 @@ def main():
     end = d1.isoformat()
     lines = [f":compass: *BHARAT_ALL_SPL weekly review* ({end}) - _advisory, no kill recommendations_",
              f"Geo: {geo_verdict} - {geo_line}",
+             f"Creative window: trailing {CREATIVE_WINDOW_DAYS}d ({window_start.isoformat()} to {end}) - "
+             f"current, not lifetime",
              f"Creative pool: {len(with_bc)}/{total_creatives} active creatives have a booking to rank by CPBC "
              f"(low-BC ones are noisier reads, not hidden - judge by BC alongside CPBC); "
              f"{len(zero_ranked)} active with spend but zero bookings (below)"]
@@ -204,7 +220,8 @@ def main():
                       "paused excluded._")
     lines.append("")
     if ranked:
-        lines.append(f"*All creatives, ranked by CPBC (Bharat-internal median Rs{bharat_median:,.0f})*")
+        lines.append(f"*All creatives (last {CREATIVE_WINDOW_DAYS}d), ranked by CPBC "
+                      f"(Bharat-internal median Rs{bharat_median:,.0f})*")
         for cid, cpbl in ranked:
             v = with_bc[cid]
             tag = ':large_green_circle:' if cpbl <= bharat_median * 0.85 else (
