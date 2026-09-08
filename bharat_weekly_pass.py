@@ -36,7 +36,6 @@ import urllib.parse
 import rule_pass as rp
 
 BHARAT_ADSET = "BHARAT_ALL_SPL_L1-L2-L3_BROAD_MULTI_APPSTORE_ABO_BFC-VOLUME_MULTI_NA"
-CREATIVE_BC_FLOOR = 10          # matches the real-data finding: below this, individual judgment is too thin
 TRAILING_WEEKS = 8              # weeks of history behind this week, for the geo self-benchmark
 SCALE_BAND = 0.15               # within +/-15% of trailing median = HOLD; better = SCALE; worse = WATCH
 
@@ -45,6 +44,51 @@ def pull_bharat_rows(d1):
     start = (d1 - datetime.timedelta(weeks=TRAILING_WEEKS + 1)).isoformat()
     rows = rp.dget('/api/master_export?' + urllib.parse.urlencode({'start': start, 'end': d1.isoformat()}))
     return [r for r in rows if r.get('ad_set') == BHARAT_ADSET and r.get('channel') == 'META']
+
+
+def bharat_active_del():
+    """Same shape as rule_pass.meta_active_del() / rmkt_weekly_pass.rmkt_active_del(), scoped
+    to BHARAT_ALL_SPL. Unlike those two, this was never wired in when the script was built -
+    the creative-level ranking pulled lifetime dashboard attribution with no live Meta
+    active-status check, so a paused creative (e.g. JUN26-H-006, confirmed PAUSED 2026-09-08)
+    could still show up ranked as if it were a live, actionable option. Fixed 2026-09-08."""
+    import json
+    import os
+    import urllib.request
+
+    tok = os.environ.get('META_ACCESS_TOKEN')
+    if not tok:
+        return None
+    acc = os.environ.get('META_AD_ACCOUNT_ID', rp.META_ACC_DEFAULT)
+    if not str(acc).startswith('act_'):
+        acc = 'act_' + str(acc)
+    ver = os.environ.get('META_API_VERSION', rp.META_VER_DEFAULT)
+    active = set()
+    calls = 0
+    url = f'https://graph.facebook.com/{ver}/{acc}/ads?' + urllib.parse.urlencode(
+        {'fields': 'id,name,effective_status,adset{name}', 'limit': 500, 'access_token': tok})
+    try:
+        while url and calls < 25:
+            with urllib.request.urlopen(url, timeout=90) as r:
+                j = json.loads(r.read().decode())
+            if 'error' in j:
+                print('warn: Meta active-filter unavailable ->', j['error'].get('message'))
+                return None
+            for a in j.get('data', []):
+                if a.get('effective_status') != 'ACTIVE':
+                    continue
+                aset = ((a.get('adset') or {}).get('name') or '').upper()
+                if 'BHARAT_ALL_SPL' not in aset:
+                    continue
+                m = rp.CONCEPT_RE.search(a.get('name', '') or '')
+                if m:
+                    active.add(m.group(0))
+            calls += 1
+            url = (j.get('paging') or {}).get('next')
+        return active
+    except Exception as e:
+        print('warn: Meta active-filter fetch failed ->', e)
+        return None
 
 
 def week_start(d):
@@ -122,36 +166,58 @@ def main():
                     f"Rs{trailing_median:,.0f} ({delta*100:+.0f}%)")
 
     # --- creative-level: advisory ranking among creatives with real volume (lifetime, full pull window) ---
+    active = bharat_active_del()
     by_cid = collections.defaultdict(lambda: {'spend': 0.0, 'bc': 0})
     for r in rows:
         m = rp.CONCEPT_RE.search(r.get('creative', '') or '')
         if not m:
             continue
         cid = m.group()
+        if active is not None and cid not in active:
+            continue  # paused/inactive - excluded, not just a low-priority entry
         by_cid[cid]['spend'] += r.get('spend') or 0
         by_cid[cid]['bc'] += r.get('booking_fee_captured') or 0
 
-    qualifying = {cid: v for cid, v in by_cid.items() if v['bc'] >= CREATIVE_BC_FLOOR}
-    cpbls = {cid: v['spend'] / v['bc'] for cid, v in qualifying.items()}
+    # No BC-count floor: a low-booking creative with real spend is exactly the
+    # case worth surfacing, not hiding. The only split is BC=0 vs BC>=1 (0
+    # bookings has no CPBC to rank by, so those go in their own spend-ranked
+    # section instead of being silently dropped).
+    with_bc = {cid: v for cid, v in by_cid.items() if v['bc'] > 0}
+    zero_bc = {cid: v for cid, v in by_cid.items() if v['bc'] == 0 and v['spend'] > 0}
+    cpbls = {cid: v['spend'] / v['bc'] for cid, v in with_bc.items()}
     bharat_median = statistics.median(cpbls.values()) if cpbls else None
     ranked = sorted(cpbls.items(), key=lambda kv: kv[1])
+    zero_ranked = sorted(zero_bc.items(), key=lambda kv: kv[1]['spend'], reverse=True)
 
     total_creatives = len(by_cid)
     end = d1.isoformat()
     lines = [f":compass: *BHARAT_ALL_SPL weekly review* ({end}) - _advisory, no kill recommendations_",
              f"Geo: {geo_verdict} - {geo_line}",
-             f"Creative pool: {len(qualifying)}/{total_creatives} creatives have >={CREATIVE_BC_FLOOR}+ lifetime BC "
-             f"(the rest don't have enough data to judge individually)",
-             ""]
+             f"Creative pool: {len(with_bc)}/{total_creatives} active creatives have a booking to rank by CPBC "
+             f"(low-BC ones are noisier reads, not hidden - judge by BC alongside CPBC); "
+             f"{len(zero_ranked)} active with spend but zero bookings (below)"]
+    if active is None:
+        lines.append("_Integrity: live Meta active-status check unavailable this run - "
+                      "list may include paused creatives._")
+    else:
+        lines.append("_Integrity: creative active-status vetted live from Meta (effective_status); "
+                      "paused excluded._")
+    lines.append("")
     if ranked:
-        lines.append(f"*Worth a look, ranked by CPBC (Bharat-internal median Rs{bharat_median:,.0f})*")
+        lines.append(f"*All creatives, ranked by CPBC (Bharat-internal median Rs{bharat_median:,.0f})*")
         for cid, cpbl in ranked:
-            v = qualifying[cid]
+            v = with_bc[cid]
             tag = ':large_green_circle:' if cpbl <= bharat_median * 0.85 else (
                   ':red_circle:' if cpbl >= bharat_median * 1.3 else ':white_circle:')
             lines.append(f"   {tag} `{cid}` {v['bc']} BC, Rs{v['spend']:,.0f}, CPBC Rs{cpbl:,.0f}")
     else:
-        lines.append("No creative has enough volume yet for even an advisory ranking.")
+        lines.append("No creative has a booking yet.")
+
+    if zero_ranked:
+        lines.append("")
+        lines.append("*Zero bookings, real spend - ranked by spend (no CPBC to judge by)*")
+        for cid, v in zero_ranked:
+            lines.append(f"   :black_circle: `{cid}` Rs{v['spend']:,.0f}, 0 BC")
 
     msg = "\n".join(lines)
 
