@@ -22,6 +22,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Install dependencies
+        # Same bug as weekly-rmkt-pass.yml, found 2026-09-08: this workflow never
+        # had a pip install step, so get_actual_google_spend_day() has thrown
+        # "No module named 'google'" on every scheduled run since inception,
+        # readiness never returned True, and the real BHARAT_ALL_SPL review has
+        # never actually executed - only the "giving up" DM alert ever fired.
+        run: |
+          pip install google-ads google-auth
       - name: Determine retry attempt
         id: retry
         run: |
