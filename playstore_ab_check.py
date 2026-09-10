@@ -8,10 +8,14 @@ being structurally the strongest days of the week) and Nikhil said W-o-W, full w
 right comparison. DM-only, one-off - not a recurring pass. Delete playstore_ab_check.yml and
 this file once this has run and been reviewed.
 
-Reminder: the screenshot change is an A/B TEST (~50% split per the Slack thread, exact split
-still unconfirmed as of Sep10), not a full rollout - any real effect will be diluted by roughly
-half in these platform-level numbers, since Meta/Google can't see which Play Store experiment
-arm a given install landed in.
+Reminder: the screenshot change is an A/B TEST at a confirmed 50/50 split (Nikhil, 2026-09-10),
+not a full rollout - Meta/Google can't see which Play Store experiment arm a given install
+landed in, so these platform-level numbers are a blend of both arms. With a known 50/50 split
+we can back out an estimate of the new-screenshot arm's own CVR: assuming the control arm's CVR
+held at the pre-period level (it's still showing the same old screenshots throughout), then
+blended_post = 0.5*pre + 0.5*test_arm  =>  test_arm = 2*blended_post - pre. Reported alongside
+the raw blended numbers, not in place of them - it's an estimate built on that one assumption,
+not a direct measurement.
 
 Usage: python playstore_ab_check.py [--dry-run]
 """
@@ -123,19 +127,26 @@ def main():
     m_delta = (m_post_cvr / m_pre_cvr - 1) * 100 if m_pre_cvr else 0.0
     g_delta = (g_post_cvr / g_pre_cvr - 1) * 100 if g_pre_cvr else 0.0
 
+    # Confirmed 50/50 split (Nikhil, 2026-09-10). Back out the new-screenshot arm's own CVR,
+    # assuming the control arm held at the pre-period rate: test_arm = 2*blended_post - pre.
+    m_test_arm = 2 * m_post_cvr - m_pre_cvr
+    g_test_arm = 2 * g_post_cvr - g_pre_cvr
+    m_test_delta = (m_test_arm / m_pre_cvr - 1) * 100 if m_pre_cvr else 0.0
+    g_test_delta = (g_test_arm / g_pre_cvr - 1) * 100 if g_pre_cvr else 0.0
+
     msg = (
         f":camera_with_flash: *Play Store screenshot A/B test - full-week W-o-W check*\n"
         f"_Pre: {PRE_WEEK[0]} to {PRE_WEEK[1]} (Mon-Sun) | Post: {POST_WEEK[0]} to {POST_WEEK[1]} (Mon-Sun)_\n"
-        f"_Reminder: this is an ~50% A/B split, not a full rollout - any real effect is diluted "
-        f"roughly by half in these platform-level numbers._\n\n"
+        f"_Confirmed 50/50 A/B split, not a full rollout - blended numbers below mix both arms; "
+        f"'est. new-screenshot arm' backs out the test arm assuming control held at the pre rate._\n\n"
         f"*Meta* (BFC-VOLUME + Creative-Testing, excl. Retargeting)\n"
         f"  Pre:  {m_pre_clicks:,} clicks -> {m_pre_installs:,} installs = {m_pre_cvr:.2f}%\n"
-        f"  Post: {m_post_clicks:,} clicks -> {m_post_installs:,} installs = {m_post_cvr:.2f}%\n"
-        f"  Delta: {m_delta:+.1f}%\n\n"
+        f"  Post (blended): {m_post_clicks:,} clicks -> {m_post_installs:,} installs = {m_post_cvr:.2f}% ({m_delta:+.1f}%)\n"
+        f"  Est. new-screenshot arm: {m_test_arm:.2f}% ({m_test_delta:+.1f}% vs pre)\n\n"
         f"*Google* (UAC + Search Brand/L1/L2/P2 + DemandGen)\n"
         f"  Pre:  {g_pre_clicks:,} clicks -> {g_pre_installs:,} installs = {g_pre_cvr:.2f}%\n"
-        f"  Post: {g_post_clicks:,} clicks -> {g_post_installs:,} installs = {g_post_cvr:.2f}%\n"
-        f"  Delta: {g_delta:+.1f}%"
+        f"  Post (blended): {g_post_clicks:,} clicks -> {g_post_installs:,} installs = {g_post_cvr:.2f}% ({g_delta:+.1f}%)\n"
+        f"  Est. new-screenshot arm: {g_test_arm:.2f}% ({g_test_delta:+.1f}% vs pre)"
     )
 
     if args.dry_run:
