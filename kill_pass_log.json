@@ -1653,7 +1653,7 @@
         "ad_ids": [
           "120251647182940343"
         ],
-        "action_taken": null,
+        "action_taken": "No",
         "action_timing": null
       },
       {
@@ -1669,6 +1669,29 @@
         "top_spender": false,
         "ad_ids": [
           "120250387732040343"
+        ],
+        "action_taken": "No",
+        "action_timing": null
+      }
+    ]
+  },
+  {
+    "date": "2026-09-09",
+    "median_cpbc": 1243.62,
+    "recos": [
+      {
+        "concept_id": "JUN26-T-064",
+        "layer": "L2",
+        "need": "MCR",
+        "verdict": "KILL",
+        "reason": "efficiency (> 1.0x median Rs1,244)",
+        "cpbc": 1258.55,
+        "bc": 5,
+        "spend": 6292.73,
+        "median_at_time": 1243.62,
+        "top_spender": false,
+        "ad_ids": [
+          "120250387734200343"
         ],
         "action_taken": null,
         "action_timing": null
