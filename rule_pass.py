@@ -85,6 +85,19 @@ SLACK_DM_DEFAULT      = 'U05A9037VFG'   # Nikhil
 META_ACC_DEFAULT      = '2007675312900454'
 META_VER_DEFAULT      = 'v23.0'
 
+# Two Delhi BFC-VOLUME ad sets, judged as separate pools (2026-09-12, Nikhil confirmed):
+# DEL_SCALE_BFC is a deliberate incremental SCALE-zone buy (see
+# wiom-demand-pillar/strategy/05-live-targeting-redraw.md) running alongside DEL_ALL_PBFC,
+# not replacing it. SCALE-only targeting is gated at >40% supply efficiency in that doc's
+# methodology - a structurally better-converting geography than DEL_ALL_PBFC's blended
+# OFF/DORMANT/HARVEST/DISCOVERY mix - so pooling the two into one CPBC median would conflate
+# targeting quality with creative quality. Found via JUN26-C-039/JUL26-C-103 showing up as
+# "active" in the daily kill-pass despite being paused in DEL_ALL_PBFC for weeks: the old
+# meta_active_del() matched any ad set with "DEL" in the name, so it silently swept in an
+# active duplicate of the same creative running in DEL_SCALE_BFC.
+DEL_ALL_PBFC_ADSET    = 'DEL_ALL_PBFC_L1-L2-L3_BROAD_MULTI_APPSTORE_ABO_BFC-VOLUME_MULTI_NA'
+DEL_SCALE_BFC_ADSET   = 'DEL_SCALE_BFC_L1-L2-L3_BROAD_MULTI_APPSTORE_ABO_BFC-VOLUME_MULTI_NA'
+
 # ---- logging constants ----
 LOG_PATH        = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'kill_pass_log.json')
 ACTION_LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'kill_action_log.csv')
@@ -158,6 +171,10 @@ def dget(path):
 
 def geo_of(name):
     n = (name or '').upper()
+    # Checked before the generic 'DEL' catch-all so the SCALE ad set gets its own pool
+    # (data['Delhi_Scale']) instead of being blended into data['Delhi'] - see
+    # DEL_SCALE_BFC_ADSET comment above.
+    if 'DEL_SCALE_BFC' in n: return 'Delhi_Scale'
     if 'DEL' in n or 'DELHI' in n: return 'Delhi'
     if 'BHARAT' in n or 'BHA' in n: return 'Bharat'
     if 'MUM' in n or 'MUMBAI' in n: return 'Mumbai'
@@ -217,6 +234,57 @@ def meta_active_del():
         except Exception: pass
         print('warn: Meta active-filter unavailable ->', str(e)[:80], body)
         return None, {}
+
+
+def meta_active_by_adset(adset_names):
+    """Same shape as meta_active_del(), but buckets active concepts by EXACT ad-set name
+    match instead of a loose 'DEL' substring - added 2026-09-12, see DEL_SCALE_BFC_ADSET
+    comment above for why. One Meta API pagination pass covers every requested ad set (not
+    one call per ad set), same cost as a single meta_active_del() call.
+
+    adset_names: iterable of exact ad-set-name strings (Meta's own adset.name, not a
+    keyword/substring) to bucket by.
+    Returns {adset_name: (active_set_or_None, ad_ids_map)} - active_set is None (degraded
+    mode, matches meta_active_del()'s contract) for every bucket if Meta is unreachable.
+    """
+    adset_names = set(adset_names)
+    tok = os.environ.get('META_ACCESS_TOKEN')
+    if not tok: return {n: (None, {}) for n in adset_names}
+    acc = os.environ.get('META_AD_ACCOUNT_ID', META_ACC_DEFAULT)
+    if not str(acc).startswith('act_'): acc = 'act_' + str(acc)
+    ver = os.environ.get('META_API_VERSION', META_VER_DEFAULT)
+    out = {n: (set(), collections.defaultdict(list)) for n in adset_names}
+    calls = 0
+    url = f'https://graph.facebook.com/{ver}/{acc}/ads?' + urllib.parse.urlencode(
+        {'fields': 'id,name,effective_status,adset{name},campaign{name}', 'limit': 500, 'access_token': tok})
+    try:
+        while url and calls < 25:
+            with urllib.request.urlopen(url, timeout=90) as r:
+                j = json.loads(r.read().decode())
+            if 'error' in j:
+                print('warn: Meta active-filter unavailable ->', j['error'].get('message'))
+                return {n: (None, {}) for n in adset_names}
+            for a in j.get('data', []):
+                if a.get('effective_status') != 'ACTIVE': continue
+                nm = a.get('name', '') or ''
+                camp = ((a.get('campaign') or {}).get('name') or '').upper()
+                aset = (a.get('adset') or {}).get('name') or ''
+                if 'BFC-VOLUME' not in camp or 'BOOKNOW' not in nm.upper() or aset not in out: continue
+                m = CONCEPT_RE.search(nm)
+                if m:
+                    cid = m.group(0)
+                    active_set, ad_ids_map = out[aset]
+                    active_set.add(cid)
+                    if a.get('id'): ad_ids_map[cid].append(a['id'])
+            calls += 1
+            url = (j.get('paging') or {}).get('next')
+        return {n: (s, dict(m)) for n, (s, m) in out.items()}
+    except Exception as e:
+        body = ''
+        try: body = e.read().decode()[:160]
+        except Exception: pass
+        print('warn: Meta active-filter unavailable ->', str(e)[:80], body)
+        return {n: (None, {}) for n in adset_names}
 
 
 def meta_today_spend(ad_ids_map, today_date):
@@ -799,7 +867,7 @@ def cpbc_l7(rec):
     return rec['w7s'] / b if b else float('inf')
 
 
-def decide(data, age, cstar, active, funnel_geo=None, variant='lifetime'):
+def decide(data, age, cstar, active, funnel_geo=None, variant='lifetime', pool_key='Delhi'):
     """variant='lifetime' (default, production): efficiency judged on lifetime CPBC vs a
     lifetime median - exactly the committed v2.6.0 behavior, unchanged.
     variant='l7d' (experimental, under observation via l7d_diff_pass.py - NOT wired into
@@ -807,11 +875,17 @@ def decide(data, age, cstar, active, funnel_geo=None, variant='lifetime'):
     - see the L7_MEDIAN_BC_GATE comment block above for why. Everything else (zero-BC kill,
     cost-velocity brake, top-spender protection, aged-out path, pool-cap prune, weekly
     geo checks) is identical in both variants - only the median basis and the per-creature
-    judged metric change."""
+    judged metric change.
+    pool_key: which data[...] bucket is "the pool" being judged - default 'Delhi'
+    (DEL_ALL_PBFC) unchanged. Pass 'Delhi_Scale' to judge the DEL_SCALE_BFC pool instead,
+    with its own independent median - see DEL_SCALE_BFC_ADSET comment. The weekly geo-budget
+    and non-Delhi geo-conv diagnostics below are untouched either way - they key off
+    MATURE_GEOS/'Delhi' specifically, not pool_key, since 'Delhi_Scale' is an ad-set split
+    within Delhi, not a different city."""
     res = {'kills': [], 'reviews': [], 'isolates': [], 'prune_cut': [], 'pool_n': 0, 'continue': 0,
            'monitor': 0, 'median': None, 'brake_spend': None, 'geo_budget': [], 'geo_conv': [],
            'active_filter': active is not None}
-    pool = data.get('Delhi', {})
+    pool = data.get(pool_key, {})
     spent = [c for c in pool if pool[c]['spend'] > 0]
     def act(c): return (active is None) or (c in active)
     if variant == 'l7d':
@@ -955,7 +1029,10 @@ def decide(data, age, cstar, active, funnel_geo=None, variant='lifetime'):
     del_svc_rate  = (del_svc_true / del_svc_check) if del_svc_check else None
     del_conv_rate = (del_bc / del_svc_true) if del_svc_true else None
     for g, gf in fg.items():
-        if g in MATURE_GEOS: continue
+        # 'Delhi_Scale' is an ad-set split within Delhi (see DEL_SCALE_BFC_ADSET comment),
+        # not a different city - excluded here so it never shows up as a phantom expansion
+        # geo in the Lucknow-style diagnostic below.
+        if g in MATURE_GEOS or g == 'Delhi_Scale': continue
         w7s = gf.get('w7s', 0)
         if w7s <= 0: continue   # not active in last 7 days
         svc_check = gf.get('svc_check', 0); svc_true = gf.get('svc_true', 0); bc = gf.get('bc', 0)
@@ -993,15 +1070,15 @@ def integrity_line(res):
     return "_Integrity:_ :warning: _active-status NOT vetted from Meta (unavailable) - basis = dashboard spend only, so recently-paused creatives may still appear. Verify in Ads Manager before acting._"
 
 
-def msg_daily(res, cstar, end, unacted=None):
+def msg_daily(res, cstar, end, unacted=None, label='DEL BOOKNOW'):
     kills, reviews, cut = res['kills'], res['reviews'], res['prune_cut']
     integ = integrity_line(res)
     if (not kills and not reviews and not cut and not unacted and not res.get('deferred_kills')
             and not res.get('deferred_top_spender') and not res.get('deferred_live_spend')):
-        return f":white_check_mark: *BFC-VOLUME daily kill+prune* ({end}, DEL BOOKNOW, lifetime): no kills, no brake, no prune. Pool {res['pool_n']}/{POOL_CAP}.\n{integ}"
+        return f":white_check_mark: *BFC-VOLUME daily kill+prune* ({end}, {label}, lifetime): no kills, no brake, no prune. Pool {res['pool_n']}/{POOL_CAP}.\n{integ}"
     medlabel = "active-only median" if res['active_filter'] else "median (incl. paused)"
     if res['median']:
-        head = (f":scales: *BFC-VOLUME daily kill + prune* ({end}, DEL BOOKNOW, lifetime)\n"
+        head = (f":scales: *BFC-VOLUME daily kill + prune* ({end}, {label}, lifetime)\n"
                 f"{medlabel} CPBC Rs{res['median']:,.0f} | C* Rs{cstar:,.0f} | brake Rs{res['brake_spend']:,.0f} | pool {res['pool_n']}/{POOL_CAP}\n"
                 f"_Decisions for review - read-only, pausing is a manual step in Ads Manager._")
     else:
@@ -1252,10 +1329,20 @@ def main():
             return
 
     start = (d1 - datetime.timedelta(days=WINDOW_DAYS - 1)).isoformat(); end = d1.isoformat()
-    active, ad_ids_map = meta_active_del()
-    last_activation = get_last_activation_dates(d1, active)
+    active_by_adset = meta_active_by_adset({DEL_ALL_PBFC_ADSET, DEL_SCALE_BFC_ADSET})
+    active, ad_ids_map = active_by_adset[DEL_ALL_PBFC_ADSET]
+    active_scale, ad_ids_map_scale = active_by_adset[DEL_SCALE_BFC_ADSET]
+    # union covers reactivation-window handling for concepts active in either pool - see
+    # compute()'s window_start logic, keyed by concept id only, not pool-specific
+    activation_lookup_set = (active or set()) | (active_scale or set()) if (active is not None or active_scale is not None) else None
+    last_activation = get_last_activation_dates(d1, activation_lookup_set)
     data, age, cstar, funnel_geo = compute(d1, last_activation)
-    res = decide(data, age, cstar, active, funnel_geo=funnel_geo)
+    res = decide(data, age, cstar, active, funnel_geo=funnel_geo, pool_key='Delhi')
+    # DEL_SCALE_BFC: separate pool, separate median - see DEL_SCALE_BFC_ADSET comment.
+    # DM-only for now, same "new pool, prove it out first" treatment as RMKT/Bharat when
+    # they launched - not yet wired into logging/retro-check/live-spend-crosscheck below,
+    # which stay scoped to the DEL_ALL_PBFC pool until this one's been watched a while.
+    res_scale = decide(data, age, cstar, active_scale, funnel_geo=funnel_geo, pool_key='Delhi_Scale') if args.mode == 'daily' else None
 
     # Live same-day spend cross-check (2026-08-17, Nikhil) - see meta_today_spend()
     # docstring. Same treatment as trailing-7d top-spender: pull the concept out of KILL
@@ -1306,6 +1393,11 @@ def main():
     msg = msg_daily(res, cstar, end, unacted=unacted) if args.mode == 'daily' else msg_weekly(res, cstar, start, end)
     if args.dry_run or args.no_post: print(msg)
     else: slack_post(msg, dm_only=args.dm_only)
+
+    if args.mode == 'daily' and res_scale is not None:
+        scale_msg = msg_daily(res_scale, cstar, end, label='DEL SCALE BOOKNOW')
+        if args.dry_run or args.no_post: print("\n" + scale_msg)
+        else: slack_post(scale_msg, dm_only=True)  # DM-only always, independent of --dm-only
 
     if args.mode == 'daily':
         cstar_msg = build_cstar_tracking_msg(data, active, cstar, end)
