@@ -1131,6 +1131,50 @@ def msg_daily(res, cstar, end, unacted=None, label='DEL BOOKNOW'):
     return "\n".join(lines)
 
 
+def build_scale_advisory_msg(data, active, end):
+    """DEL_SCALE_BFC: advisory-only, no hard KILL calls - Nikhil, 2026-09-12: "there will be
+    a learning effect here, don't worry about its starting levels... reco only - no hard
+    calls." This ad set only started 2026-09-10; msg_daily()'s KILL/CAPPED/PROTECTED framing
+    (built for a mature pool) isn't appropriate while it's still ramping. Same shape as
+    bharat_weekly_pass.py's advisory ranking: rank every active creative with a booking by
+    CPBC against its own pool's median, list zero-booking creatives separately (spend-ranked,
+    since CPBC is undefined for them) instead of hiding them. DM-only, daily - piggybacks on
+    the existing daily run's Meta pull rather than a separate weekly script/workflow.
+    """
+    pool = data.get('Delhi_Scale', {})
+    if active is None:
+        return (f":compass: *DEL SCALE BOOKNOW - advisory* ({end}) - _observation only, no kill recommendations_\n"
+                f"_Integrity: live Meta active-status check unavailable this run - skipped._")
+    by_cid = {c: v for c, v in pool.items() if c in active}
+    total = len(by_cid)
+    with_bc = {c: v for c, v in by_cid.items() if v['bc'] > 0}
+    zero_bc = {c: v for c, v in by_cid.items() if v['bc'] == 0 and v['spend'] > 0}
+    cpbls = {c: cpbc(v) for c, v in with_bc.items()}
+    med = statistics.median(cpbls.values()) if cpbls else None
+    ranked = sorted(cpbls.items(), key=lambda kv: kv[1])
+    zero_ranked = sorted(zero_bc.items(), key=lambda kv: kv[1]['spend'], reverse=True)
+
+    lines = [f":compass: *DEL SCALE BOOKNOW - advisory* ({end}) - "
+             f"_observation only, ad set still ramping (launched 2026-09-10) - no kill recommendations_",
+             f"Pool: {total} active | {len(with_bc)} with a booking to rank by CPBC | {len(zero_ranked)} at zero bookings so far",
+             "_Integrity: creative active-status vetted live from Meta (effective_status); paused excluded._",
+             ""]
+    if ranked:
+        lines.append(f"*Ranked by CPBC (pool median Rs{med:,.0f})*")
+        for c, x in ranked:
+            v = with_bc[c]
+            tag = ':large_green_circle:' if x <= med * 0.85 else (':red_circle:' if x >= med * 1.3 else ':white_circle:')
+            lines.append(f"   {tag} `{c}` {v['bc']} BC, Rs{v['spend']:,.0f}, CPBC Rs{x:,.0f}")
+    else:
+        lines.append("No creative has a booking yet.")
+    if zero_ranked:
+        lines.append("")
+        lines.append("*Zero bookings, real spend - ranked by spend (no CPBC to judge by)*")
+        for c, v in zero_ranked:
+            lines.append(f"   :black_circle: `{c}` Rs{v['spend']:,.0f}, 0 BC")
+    return "\n".join(lines)
+
+
 def build_cstar_tracking_msg(data, active, cstar, end):
     """Phase 1 of the C*-anchoring proposal (2026-09-05, Nikhil): pure observation,
     zero effect on any kill/review/prune decision. Reports every active creative's
@@ -1338,11 +1382,6 @@ def main():
     last_activation = get_last_activation_dates(d1, activation_lookup_set)
     data, age, cstar, funnel_geo = compute(d1, last_activation)
     res = decide(data, age, cstar, active, funnel_geo=funnel_geo, pool_key='Delhi')
-    # DEL_SCALE_BFC: separate pool, separate median - see DEL_SCALE_BFC_ADSET comment.
-    # DM-only for now, same "new pool, prove it out first" treatment as RMKT/Bharat when
-    # they launched - not yet wired into logging/retro-check/live-spend-crosscheck below,
-    # which stay scoped to the DEL_ALL_PBFC pool until this one's been watched a while.
-    res_scale = decide(data, age, cstar, active_scale, funnel_geo=funnel_geo, pool_key='Delhi_Scale') if args.mode == 'daily' else None
 
     # Live same-day spend cross-check (2026-08-17, Nikhil) - see meta_today_spend()
     # docstring. Same treatment as trailing-7d top-spender: pull the concept out of KILL
@@ -1394,10 +1433,13 @@ def main():
     if args.dry_run or args.no_post: print(msg)
     else: slack_post(msg, dm_only=args.dm_only)
 
-    if args.mode == 'daily' and res_scale is not None:
-        scale_msg = msg_daily(res_scale, cstar, end, label='DEL SCALE BOOKNOW')
+    if args.mode == 'daily':
+        # DEL_SCALE_BFC: advisory-only (Nikhil, 2026-09-12: "reco only - no hard calls" -
+        # the pool is still ramping, not a candidate for msg_daily()'s KILL framing yet).
+        # DM-only always, independent of --dm-only, same as cstar/maturity tracking below.
+        scale_msg = build_scale_advisory_msg(data, active_scale, end)
         if args.dry_run or args.no_post: print("\n" + scale_msg)
-        else: slack_post(scale_msg, dm_only=True)  # DM-only always, independent of --dm-only
+        else: slack_post(scale_msg, dm_only=True)
 
     if args.mode == 'daily':
         cstar_msg = build_cstar_tracking_msg(data, active, cstar, end)
