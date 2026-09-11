@@ -1131,6 +1131,42 @@ def msg_daily(res, cstar, end, unacted=None, label='DEL BOOKNOW'):
     return "\n".join(lines)
 
 
+LEARNING_EXIT_CONVERSIONS = 50  # Meta's own published guidance: ~50 optimization events
+                                 # within a rolling 7-day window to exit learning phase
+
+
+def meta_adset_learning_stage(adset_name):
+    """Learning-phase status for one ad set, by exact name - added 2026-09-12 (Nikhil) to
+    read DEL_SCALE_BFC's Meta-reported learning_stage_info (status, conversions accumulated)
+    alongside its daily advisory message, so the CPBC ranking can be read against "is this
+    ad set even out of learning yet" instead of in a vacuum. One light, single-adset call -
+    not the full /ads pagination meta_active_del()/meta_active_by_adset() do.
+    Returns {'status':..., 'conversions':...} or None if Meta is unavailable/ad set not found
+    - callers must treat None as "skip this section", never as "zero conversions".
+    """
+    tok = os.environ.get('META_ACCESS_TOKEN')
+    if not tok: return None
+    acc = os.environ.get('META_AD_ACCOUNT_ID', META_ACC_DEFAULT)
+    if not str(acc).startswith('act_'): acc = 'act_' + str(acc)
+    ver = os.environ.get('META_API_VERSION', META_VER_DEFAULT)
+    url = f'https://graph.facebook.com/{ver}/{acc}/adsets?' + urllib.parse.urlencode({
+        'fields': 'learning_stage_info',
+        'filtering': json.dumps([{'field': 'name', 'operator': 'EQUAL', 'value': adset_name}]),
+        'access_token': tok,
+    })
+    try:
+        with urllib.request.urlopen(url, timeout=60) as r:
+            j = json.loads(r.read().decode())
+        rows = j.get('data', [])
+        if not rows: return None
+        info = rows[0].get('learning_stage_info')
+        if not info: return None
+        return {'status': info.get('status'), 'conversions': info.get('conversions')}
+    except Exception as e:
+        print('warn: learning-stage fetch failed ->', str(e)[:120])
+        return None
+
+
 def build_scale_advisory_msg(data, active, end):
     """DEL_SCALE_BFC: advisory-only, no hard KILL calls - Nikhil, 2026-09-12: "there will be
     a learning effect here, don't worry about its starting levels... reco only - no hard
@@ -1156,9 +1192,19 @@ def build_scale_advisory_msg(data, active, end):
 
     lines = [f":compass: *DEL SCALE BOOKNOW - advisory* ({end}) - "
              f"_observation only, ad set still ramping (launched 2026-09-10) - no kill recommendations_",
-             f"Pool: {total} active | {len(with_bc)} with a booking to rank by CPBC | {len(zero_ranked)} at zero bookings so far",
-             "_Integrity: creative active-status vetted live from Meta (effective_status); paused excluded._",
-             ""]
+             f"Pool: {total} active | {len(with_bc)} with a booking to rank by CPBC | {len(zero_ranked)} at zero bookings so far"]
+    learning = meta_adset_learning_stage(DEL_SCALE_BFC_ADSET)
+    if learning and learning.get('conversions') is not None:
+        conv = learning['conversions']; status = learning.get('status') or 'unknown'
+        if status == 'LEARNING':
+            remaining = max(LEARNING_EXIT_CONVERSIONS - conv, 0)
+            lines.append(f"Learning phase: *{status}* - {conv}/{LEARNING_EXIT_CONVERSIONS} conversions "
+                         f"(~{remaining} more typically needed to exit) - read the CPBC ranking below as noise until this clears.")
+        else:
+            lines.append(f"Learning phase: *{status}* - {conv} conversions accumulated. "
+                         f"Out of LEARNING - the CPBC ranking below is worth reading as real signal now.")
+    lines.append("_Integrity: creative active-status vetted live from Meta (effective_status); paused excluded._")
+    lines.append("")
     if ranked:
         lines.append(f"*Ranked by CPBC (pool median Rs{med:,.0f})*")
         for c, x in ranked:
