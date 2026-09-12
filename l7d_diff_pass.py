@@ -116,6 +116,22 @@ def main():
     last_activation = rp.get_last_activation_dates(d1)
     data, age, cstar, funnel_geo = rp.compute(d1, last_activation)
     active, _ad_ids_map = rp.meta_active_del()
+    # 2026-09-12 (Nikhil, caught live): meta_active_del() returns (None, {}) whenever the
+    # Meta call fails for any reason (that day it was a transient Meta 500 during a burst of
+    # API traffic elsewhere) - decide()'s act() treats active=None as "no filter, include
+    # everyone," so every creative with ANY historical spend in the window - including ones
+    # paused for weeks (JUN26-T-021/T-015/T-018, dead since well before this window) -
+    # became an eligible kill/spare candidate, and the posted message carried no warning that
+    # this had happened. This is a DM-only "do not act on this" experimental pass, so the
+    # safe fix is to skip posting entirely rather than ship a misleading diff - there's no
+    # reader-visible cost to silently retrying next time this pass runs, and no upside to a
+    # diff built on an unfiltered creative set. state['last_diffed'] is deliberately NOT set
+    # here, so a later re-run today (e.g. a manual retry) isn't blocked by the idempotency
+    # guard for a run that produced nothing valid.
+    if active is None:
+        print('active-status unavailable this run (Meta call failed) - skipping the L7D diff '
+              'post rather than risk flagging long-paused creatives as live candidates')
+        return
     res_l7d = rp.decide(data, age, cstar, active, funnel_geo=funnel_geo, variant='l7d')
 
     msg = build_diff_message(prod_entry, res_l7d, d1)
