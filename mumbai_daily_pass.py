@@ -2,9 +2,17 @@
 """Daily MUMBAI_CSP99_SPL monitor - DM only, read-only, advisory. Never writes to Meta.
 
 Built 2026-09-12 when the Mumbai Plan D ad set went live (ad set 120251928228180343, Rs 13k/day,
-serviceable_page_loaded event, 72 circles, 99 CSPs). Reads D-1 straight from Meta Insights (no
-dashboard-readiness gate: the Meta side is complete by 10:30 IST) and adds the growth-dashboard
-install-cohort funnel where it exists (maturing for 14 days, shown as such).
+serviceable_page_loaded event, 72 circles, 99 CSPs). Reads D-1 from Meta Insights AND the
+growth-dashboard install-cohort funnel (checks, pass rate, bookings, connections - the T3/T5
+tripwires below depend on these). Originally shipped with only a Meta-side timing assumption
+("Meta is complete by 10:30 IST") and no gate on the dashboard side - Nikhil caught this
+2026-09-12: the dashboard's own ETL is the same erratic-timing risk documented in
+dashboard_readiness.py (D-1 data lands clustered around 13:00-13:30 and 15:00-15:30 IST), so a
+T3 pass-rate or T5 CPI/connections read taken at 10:30 IST could easily be judging partial data
+without any warning. Now uses the SAME 3-attempt retry ladder as bharat_weekly_pass.py -
+dashboard_readiness.is_dashboard_data_ready() gates the run, 13:30/15:30/17:30 IST, own
+idempotency state (mumbai_daily_readiness_state.json) so a later attempt that day is a no-op
+once a real run has completed for D-1.
 
 What it evaluates every day, in the order the plan's tripwires are dated (see
 Downloads/Ajinkya - Mumbai Restart Files - 11 Sep/1 plan/Mumbai ad set - final plan.md):
@@ -64,11 +72,37 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--dry-run', action='store_true')
     ap.add_argument('--date', help='D-1 anchor YYYY-MM-DD (default yesterday IST)')
+    ap.add_argument('--last-retry', action='store_true',
+                     help='final scheduled attempt of the day - alert (DM) if dashboard data is still '
+                          'not ready, instead of quietly postponing to the next retry')
     args = ap.parse_args()
     rp.load_env()
     now_ist = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=5, minutes=30)
     d1 = datetime.date.fromisoformat(args.date) if args.date else (now_ist - datetime.timedelta(days=1)).date()
     day_n = (d1 - LIVE_DATE).days + 1
+
+    # Same dashboard-readiness gate + idempotency pattern as bharat_weekly_pass.py - own
+    # script_name ('mumbai_daily') so state never collides with any other pass.
+    if not args.dry_run and not args.date:
+        from dashboard_readiness import is_dashboard_data_ready, already_completed_today, mark_completed_today
+        if already_completed_today('mumbai_daily', d1):
+            print(f'already completed for {d1} - skipping (idempotent retry guard)')
+            return
+        ready, dash_total, actual_total = is_dashboard_data_ready(d1)
+        if not ready:
+            dash_s = f"Rs{dash_total:,.0f}" if dash_total is not None else 'n/a'
+            act_s = f"Rs{actual_total:,.0f}" if actual_total is not None else 'n/a'
+            if args.last_retry:
+                rp.slack_post(
+                    f":rotating_light: *MUMBAI_CSP99_SPL daily* - dashboard data for {d1} still "
+                    f"incomplete after 3 attempts (dashboard spend {dash_s} vs actual Meta+Google spend {act_s}). "
+                    f"Pass did NOT run today - check the dashboard ETL.",
+                    dm_only=True)
+                print(f'last retry - data still not ready for {d1} (dashboard={dash_s}, actual={act_s}) - alerted, giving up for today')
+            else:
+                print(f'dashboard data not ready for {d1} (dashboard={dash_s}, actual={act_s}) - postponing to next retry')
+            return
+
     state = json.load(open(STATE)) if os.path.exists(STATE) else {'snapshots': {}}
 
     # ---- Meta: ad set state + daily rows since live + 7d reach
@@ -155,6 +189,9 @@ def main():
         return
     rp.slack_post(text, dm_only=True)
     json.dump(state, open(STATE, 'w'), indent=1)
+    if not args.date:
+        from dashboard_readiness import mark_completed_today
+        mark_completed_today('mumbai_daily', d1)
 
 
 if __name__ == '__main__':

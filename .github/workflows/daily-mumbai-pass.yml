@@ -1,12 +1,20 @@
 name: Daily MUMBAI_CSP99_SPL monitor (DM only)
 
 # Read-only daily read of the Mumbai Plan D ad set with the plan's dated tripwires - see
-# mumbai_daily_pass.py. Reads D-1 straight from Meta Insights, so no dashboard-readiness
-# retry ladder: one shot at 05:00 UTC = 10:30 IST. Dashboard install-cohort fields are
-# added when present and labelled as maturing.
+# mumbai_daily_pass.py. T3 (pass rate) and T5 (CPI, connections) depend on the growth-dashboard
+# funnel, which has the same erratic D-1 ETL timing as every other dashboard-dependent pass
+# (dashboard_readiness.py) - so this uses the SAME 3-attempt retry ladder as
+# weekly-bharat-pass.yml/daily-rule-pass.yml, just daily instead of Monday-only (2026-09-12,
+# Nikhil: "timings are also affected by growth dashboard data update").
+#   08:00 UTC = 13:30 IST - attempt 1
+#   10:00 UTC = 15:30 IST - attempt 2
+#   12:00 UTC = 17:30 IST - attempt 3 (last retry - alerts DM instead of quietly postponing if
+#                            data is still not ready)
 on:
   schedule:
-    - cron: '0 5 * * *'
+    - cron: '0 8 * * *'
+    - cron: '0 10 * * *'
+    - cron: '0 12 * * *'
   workflow_dispatch: {}
 
 jobs:
@@ -17,33 +25,51 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Install dependencies
+        # dashboard_readiness.py's is_dashboard_data_ready() cross-checks actual Google spend
+        # via the Google Ads API - same missing-pip-install bug weekly-bharat-pass.yml had
+        # (found 2026-09-08: readiness silently never returned True without this).
+        run: |
+          pip install google-ads google-auth
+      - name: Determine retry attempt
+        id: retry
+        run: |
+          case "${{ github.event.schedule }}" in
+            "0 8 * * *")  echo "flag=" >> "$GITHUB_OUTPUT" ;;
+            "0 10 * * *") echo "flag=" >> "$GITHUB_OUTPUT" ;;
+            "0 12 * * *") echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;
+            *)            echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;  # workflow_dispatch - one shot
+          esac
       - name: Run Mumbai daily pass and post to Slack (DM only)
-        run: python mumbai_daily_pass.py
+        run: python mumbai_daily_pass.py ${{ steps.retry.outputs.flag }}
         env:
           WIOM_DASHBOARD_TOKEN: ${{ secrets.WIOM_DASHBOARD_TOKEN }}
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
           META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
+          GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
+          GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}
+          GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}
+          GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}
+          GOOGLE_ADS_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_CUSTOMER_ID }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-      - name: Commit state (daily learning-stage snapshots feed the 7d SPL count)
+      - name: Commit state (learning-stage snapshots + readiness idempotency marker)
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
-          if [ -f mumbai_pass_state.json ]; then
-            git add mumbai_pass_state.json
-            if ! git diff --cached --quiet; then
-              git commit -m "mumbai-pass state: $(date -u +%Y-%m-%d)"
-              for i in 1 2 3 4 5; do
-                if git push; then
-                  break
-                fi
-                echo "push rejected (attempt $i) - fetching + merging and retrying"
-                git fetch origin main
-                if ! git merge origin/main --no-edit; then
-                  echo "merge conflict - aborting, will retry next scheduled run"
-                  git merge --abort || true
-                  break
-                fi
-                sleep $((RANDOM % 5 + 1))
-              done
-            fi
+          git add mumbai_pass_state.json mumbai_daily_readiness_state.json 2>/dev/null || true
+          if ! git diff --cached --quiet; then
+            git commit -m "mumbai-daily state: $(date -u +%Y-%m-%d)"
+            for i in 1 2 3 4 5; do
+              if git push; then
+                break
+              fi
+              echo "push rejected (attempt $i) - fetching + merging and retrying"
+              git fetch origin main
+              if ! git merge origin/main --no-edit; then
+                echo "merge conflict - aborting, will retry next scheduled run"
+                git merge --abort || true
+                break
+              fi
+              sleep $((RANDOM % 5 + 1))
+            done
           fi
