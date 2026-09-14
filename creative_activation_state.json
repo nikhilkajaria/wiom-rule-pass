@@ -1,5 +1,5 @@
 {
-  "last_checked": "2026-09-12",
+  "last_checked": "2026-09-13",
   "events": {
     "JUN26-C-093": [
       {
@@ -1185,6 +1185,12 @@
         "date": "2026-09-10",
         "from": "Active",
         "to": "Pending process"
+      },
+      {
+        "ts": "2026-09-12T13:47:47",
+        "date": "2026-09-12",
+        "from": "Pending process",
+        "to": "Pending Review"
       }
     ],
     "JUN26-C-036": [
@@ -2833,6 +2839,12 @@
         "date": "2026-09-04",
         "from": "Active",
         "to": "Pending process"
+      },
+      {
+        "ts": "2026-09-12T10:15:17",
+        "date": "2026-09-12",
+        "from": "Inactive",
+        "to": "Deleted"
       }
     ],
     "JUN26-T-019": [
