@@ -172,8 +172,7 @@ def main():
     # ---- message
     d = days[-1] if days else {}
     ad_lines = sorted(ads, key=lambda a: -f(a['spend']))[:6]
-    text = (f"*MUMBAI_CSP99_SPL daily* - {d1:%a %d %b} (day {day_n} since 12 Sep), budget Rs {budget:,.0f}/day, "
-            f"Meta learning: {lsi.get('status', '?')} ({conv_now} events so far)\n"
+    text = (f"*MUMBAI_CSP99_SPL daily* - {d1:%a %d %b} (day {day_n} since 12 Sep), budget Rs {budget:,.0f}/day\n"
             f"D-1: spend Rs {f(d.get('spend')):,.0f}, CPM Rs {f(d.get('cpm')):.0f}, impr {f(d.get('impressions')):,.0f}, "
             f"installs (Meta) {actions(d, 'mobile_app_install'):.0f}, link clicks {f(d.get('inline_link_clicks')):.0f}\n"
             f"Trailing 7d: spend Rs {f(wk.get('spend')):,.0f}, reach {f(wk.get('reach')):,.0f}, freq {freq7:.2f}, CPM Rs {f(wk.get('cpm')):.0f}, "
