@@ -3,57 +3,51 @@
   "shift": {
     "initiated_date": "2026-09-12",
     "direction": "META_TO_GOOGLE",
-    "step": 2,
+    "step": 3,
     "meta_allocations": [
       {
         "name": "BHARAT_LUCKNOW_AI_L1-L2-L3_BROAD_BOOKNOW_APPSTORE_ABO_BFC-VOLUME_MULTI_NA",
         "amount": 700.0,
-        "cpbl": 8874.445,
-        "bc": 4
+        "cpbl": 4951.457142857143,
+        "bc": 7
       },
       {
         "name": "BHARAT_ALL_SPL_L1-L2-L3_BROAD_MULTI_APPSTORE_ABO_BFC-VOLUME_MULTI_NA",
         "amount": 1000.0,
-        "cpbl": 1325.0387500000004,
-        "bc": 40
+        "cpbl": 1190.6123913043482,
+        "bc": 46
       },
       {
         "name": "DEL_ALL_PBFC_L1-L2-L3_BROAD_MULTI_APPSTORE_ABO_BFC-VOLUME_MULTI_NA",
-        "amount": 6300.0,
-        "cpbl": 904.2754984894261,
-        "bc": 331
-      },
-      {
-        "name": "DEL_ALL_BFC_L0-L1-L2_RMKT-VV75-MAST90_BOOKNOW_APPSTORE_ABO_RETARGETING_MULTI_NA",
-        "amount": 3600.0,
-        "cpbl": 679.888535911602,
-        "bc": 362
+        "amount": 4600.0,
+        "cpbl": 913.1571343283582,
+        "bc": 335
       }
     ],
     "google_allocations": [
       {
         "name": "GOOGLE_BA_DEL_SCALE_ABO_DEMANDGEN_YT_BFC_VOLUME_10062026",
         "amount": 1200.0,
-        "cpbl": 380.6395096,
-        "bc": 165
-      },
-      {
-        "name": "GOOGLE_BA_DEL_SCALE_ABO_UAC_BFC-VOLUME_010626",
-        "amount": 13300.0,
-        "cpbl": 931.6971450299088,
-        "bc": 769
+        "cpbl": 371.20038181656804,
+        "bc": 169
       },
       {
         "name": "GOOGLE_BA_DEL_SCALE_ABO_SEARCH_L2_04072026",
-        "amount": 50.0,
-        "cpbl": 986.7968769999998,
+        "amount": 100.0,
+        "cpbl": 888.2197014285714,
         "bc": 7
+      },
+      {
+        "name": "GOOGLE_BA_DEL_SCALE_ABO_UAC_BFC-VOLUME_010626",
+        "amount": 5000.0,
+        "cpbl": 905.470969477215,
+        "bc": 790
       }
     ],
     "trigger_gap_pct": 18.7,
-    "last_step_date": "2026-09-13",
-    "last_step_time": "2026-09-14T20:21:13.790941+00:00",
-    "next_step_date": "2026-09-14"
+    "last_step_date": "2026-09-14",
+    "last_step_time": "2026-09-15T18:47:52.131301+00:00",
+    "next_step_date": "2026-09-15"
   },
   "stabilization_end": null
 }
