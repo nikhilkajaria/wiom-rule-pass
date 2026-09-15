@@ -1540,14 +1540,14 @@ def main():
         # itself). build_scale_advisory_msg()'s pure-observation framing from 2026-09-12 is
         # retired (left defined, not deleted, in case this needs to roll back fast) - this pool
         # is no longer "still ramping" by the numbers. Kept deliberately conservative for its
-        # first week off learning: daily_kill_cap=1 (vs the normal 3) and DM-only rather than
-        # the full channel, since "exited learning" and "settled" aren't the same thing yet.
-        # Re-evaluate after a week of real kill behavior - graduate to the normal cap and the
-        # #demand-reports channel once it's proven stable.
+        # first week off learning: daily_kill_cap stays at 1 (vs the normal 3) - Nikhil promoted
+        # this to #demand-reports + DM on 2026-09-15, but the reduced cap is a separate decision
+        # not part of that ask, left untouched. Re-evaluate the cap after a week of real kill
+        # behavior on the channel.
         res_scale = decide(data, age, cstar, active_scale, funnel_geo=funnel_geo, pool_key='Delhi_Scale', daily_kill_cap=1)
         scale_msg = msg_daily(res_scale, cstar, end, label='DEL SCALE BOOKNOW')
         if args.dry_run or args.no_post: print("\n" + scale_msg)
-        else: slack_post(scale_msg, dm_only=True)
+        else: slack_post(scale_msg, dm_only=False)
 
     if args.mode == 'daily':
         cstar_msg = build_cstar_tracking_msg(data, active, cstar, end)

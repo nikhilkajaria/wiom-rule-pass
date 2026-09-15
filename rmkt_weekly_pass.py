@@ -207,7 +207,7 @@ def main():
     if args.dry_run:
         print(msg)
     else:
-        rp.slack_post(msg, dm_only=True)  # DM-only, always - not promoted to #demand-reports yet
+        rp.slack_post(msg, dm_only=False)  # promoted to #demand-reports + DM, 2026-09-15 (Nikhil)
         if not args.date:
             from dashboard_readiness import mark_completed_today
             mark_completed_today('rmkt_weekly', d1)  # after the post succeeds, so a crash mid-run allows retry
