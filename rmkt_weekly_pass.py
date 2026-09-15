@@ -11,7 +11,7 @@ Rs821 over Jul-Aug, near C*) - see the wiom-rule-pass session that live-previewe
 Still inherits every open measurement issue from the PBFC side (small-sample noise, no
 maturity-adjustment, peer-median-not-C*) - this is a starting shape, not a finished one. Runs
 WEEKLY (not daily) and posts DM-only, always, regardless of any future --dm-only flag removal -
-this stays DM-only until explicitly promoted to #growth-reports.
+this stays DM-only until explicitly promoted to #demand-reports.
 
 Usage: python rmkt_weekly_pass.py [--dry-run] [--date YYYY-MM-DD]
 """
@@ -207,7 +207,7 @@ def main():
     if args.dry_run:
         print(msg)
     else:
-        rp.slack_post(msg, dm_only=True)  # DM-only, always - not promoted to #growth-reports yet
+        rp.slack_post(msg, dm_only=True)  # DM-only, always - not promoted to #demand-reports yet
         if not args.date:
             from dashboard_readiness import mark_completed_today
             mark_completed_today('rmkt_weekly', d1)  # after the post succeeds, so a crash mid-run allows retry

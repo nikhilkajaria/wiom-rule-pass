@@ -4,7 +4,7 @@
 Compares the production daily kill-pass's ACTUAL logged decisions (from
 kill_pass_log.json - what really got posted and evaluated) against a fresh run of
 decide(..., variant='l7d') for the same date, and DMs Nikhil ONLY (hardcoded
-dm_only=True - never posts to #growth-reports, no matter what). Purely diagnostic:
+dm_only=True - never posts to #demand-reports, no matter what). Purely diagnostic:
 writes nothing to kill_pass_log.json, kill_action_log.csv, or creative_activation_state.json
 - only its own small idempotency marker (l7d_diff_state.json).
 
@@ -59,7 +59,7 @@ def build_diff_message(prod_entry, res_l7d, d1):
     lines = [
         f":test_tube: *EXPERIMENTAL (L7D variant) kill-pass diff* ({d1.isoformat()}, DEL BOOKNOW)",
         "_Not a recommendation - do not act on this. Compares production's actual logged decisions "
-        "against an L7-day-CPBC variant still under observation. DM-only, never posted to #growth-reports._",
+        "against an L7-day-CPBC variant still under observation. DM-only, never posted to #demand-reports._",
         "",
     ]
     if not spared and not new_kills:

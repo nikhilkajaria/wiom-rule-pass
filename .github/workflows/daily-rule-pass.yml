@@ -49,7 +49,7 @@ jobs:
             "0 12 * * *") echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;
             *)            echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;  # workflow_dispatch (manual) - one shot, alert if not ready
           esac
-      - name: Run daily kill + prune pass and post to Slack (#growth-reports + DM)
+      - name: Run daily kill + prune pass and post to Slack (#demand-reports + DM)
         run: python rule_pass.py --mode daily ${{ steps.retry.outputs.flag }}
         env:
           WIOM_DASHBOARD_TOKEN: ${{ secrets.WIOM_DASHBOARD_TOKEN }}
@@ -61,7 +61,7 @@ jobs:
           GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}
           GOOGLE_ADS_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_CUSTOMER_ID }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-          # SLACK_CHANNEL_ID defaults to #growth-reports (C0B9G0Q68G6); SLACK_DM_USER_ID to U05A9037VFG. Override here only if they change.
+          # SLACK_CHANNEL_ID defaults to #demand-reports (C0C216DU0P6); SLACK_DM_USER_ID to U05A9037VFG. Override here only if they change.
       - name: Commit readiness state (idempotency marker)
         # A "not ready, postponed" attempt never writes this file - only commit
         # if it exists and actually changed, so a routine postponement never

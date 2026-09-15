@@ -64,7 +64,7 @@ jobs:
           GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}
           GOOGLE_ADS_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_CUSTOMER_ID }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-          # SLACK_CHANNEL_ID defaults to #growth-reports (C0B9G0Q68G6)
+          # SLACK_CHANNEL_ID defaults to #demand-reports (C0C216DU0P6)
           # SLACK_DM_USER_ID defaults to U05A9037VFG (Nikhil)
 
       - name: Commit updated state + log

@@ -8,7 +8,7 @@ name: L7D experimental kill-pass diff
 # completion without double-diffing the same date.
 #
 # DM-only, always - l7d_diff_pass.py hardcodes dm_only=True and never posts to
-# #growth-reports. Purely diagnostic: never writes to kill_pass_log.json,
+# #demand-reports. Purely diagnostic: never writes to kill_pass_log.json,
 # kill_action_log.csv, or creative_activation_state.json, and never touches any ad
 # platform.
 on:

@@ -103,7 +103,7 @@ DASH_BASE            = 'https://growth-portal.up.railway.app'
 META_ACC_DEFAULT     = '2007675312900454'
 META_VER_DEFAULT     = 'v23.0'
 GOOGLE_CID_DEFAULT   = '1218037894'
-SLACK_CHANNEL_DEFAULT = 'C0B9G0Q68G6'  # #growth-reports
+SLACK_CHANNEL_DEFAULT = 'C0C216DU0P6'  # #demand-reports (repointed 2026-09-15, currently dormant - this script runs --dm-only in production)
 SLACK_DM_DEFAULT      = 'U05A9037VFG'  # Nikhil
 
 # in-scope campaign name substrings (case-insensitive)
@@ -736,7 +736,7 @@ def slack_post(text, dm_only=False):
     if op.get('ok'):
         targets.append(('DM', op['channel']['id']))
     if not dm_only:
-        targets.append(('#growth-reports', os.environ.get('SLACK_CHANNEL_ID', SLACK_CHANNEL_DEFAULT)))
+        targets.append(('#demand-reports', os.environ.get('SLACK_CHANNEL_ID', SLACK_CHANNEL_DEFAULT)))
     for label, ch in targets:
         resp = slack_api('chat.postMessage', token, {'channel': ch, 'text': text, 'unfurl_links': False, 'mrkdwn': True})
         print(f'posted to {label}:', 'ok' if resp.get('ok') else resp.get('error'))

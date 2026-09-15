@@ -11,7 +11,7 @@
            Meta API read of configured_status + updated_time. Unacted KILLs surface in the post.
 
 It NEVER writes to any ad platform - pausing/scaling stays a manual human step. Posts to
-#growth-reports and a DM copy.
+#demand-reports and a DM copy.
 
 Run:  python rule_pass.py --mode daily  [--dry-run] [--dm-only] [--date YYYY-MM-DD]
 Env (Actions secrets / local C:\\credentials\\.env): WIOM_DASHBOARD_TOKEN, META_ACCESS_TOKEN,
@@ -89,7 +89,10 @@ CONCEPT_RE        = re.compile(r'(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|
 # meta_active_del(), compute(), and the Activity Log parser - never got a verdict, never
 # counted toward the pool or the median, never eligible for the reactivation grace period.
 # Month-agnostic now so this doesn't silently recur every time a new month's batch launches.
-SLACK_CHANNEL_DEFAULT = 'C0B9G0Q68G6'   # #growth-reports
+SLACK_CHANNEL_DEFAULT = 'C0C216DU0P6'   # #demand-reports (repointed 2026-09-15, Nikhil - was
+                                          # #demand-reports C0C216DU0P6; #demand-reports is a
+                                          # new public channel, bot must be invited before this
+                                          # takes effect or chat.postMessage fails not_in_channel)
 SLACK_DM_DEFAULT      = 'U05A9037VFG'   # Nikhil
 META_ACC_DEFAULT      = '2007675312900454'
 META_VER_DEFAULT      = 'v23.0'
@@ -1282,7 +1285,7 @@ def build_cstar_tracking_msg(data, active, cstar, end):
     the C*-anchoring design conversation for why (killing on a moving peer-median
     with zero volume-awareness already misjudged the pool's biggest creative, and
     an overnight switch to a raw C* line would flag ~9 of 10 active creatives at
-    once given today's pool). DM-only, always - never posted to #growth-reports,
+    once given today's pool). DM-only, always - never posted to #demand-reports,
     independent of --dm-only (which only controls the main kill+prune message)."""
     pool = data.get('Delhi', {})
     if not cstar:
@@ -1414,7 +1417,7 @@ def slack_post(text, dm_only=False):
     if op.get('ok'): targets.append(('DM', op['channel']['id']))
     else: print("warn: conversations.open failed:", op.get('error'))
     if not dm_only:
-        targets.append(('#growth-reports', os.environ.get('SLACK_CHANNEL_ID', SLACK_CHANNEL_DEFAULT)))
+        targets.append(('#demand-reports', os.environ.get('SLACK_CHANNEL_ID', SLACK_CHANNEL_DEFAULT)))
     for label, ch in targets:
         resp = slack_api('chat.postMessage', token, {'channel': ch, 'text': text, 'unfurl_links': False, 'mrkdwn': True})
         print(f"posted to {label} ({ch}):", 'ok' if resp.get('ok') else resp.get('error'))
@@ -1540,7 +1543,7 @@ def main():
         # first week off learning: daily_kill_cap=1 (vs the normal 3) and DM-only rather than
         # the full channel, since "exited learning" and "settled" aren't the same thing yet.
         # Re-evaluate after a week of real kill behavior - graduate to the normal cap and the
-        # #growth-reports channel once it's proven stable.
+        # #demand-reports channel once it's proven stable.
         res_scale = decide(data, age, cstar, active_scale, funnel_geo=funnel_geo, pool_key='Delhi_Scale', daily_kill_cap=1)
         scale_msg = msg_daily(res_scale, cstar, end, label='DEL SCALE BOOKNOW')
         if args.dry_run or args.no_post: print("\n" + scale_msg)

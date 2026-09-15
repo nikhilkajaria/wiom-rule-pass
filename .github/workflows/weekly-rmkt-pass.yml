@@ -1,7 +1,7 @@
 name: Weekly RETARGETING kill+prune (DM only)
 
 # Monday-morning review of the RETARGETING ad set, DM-only for now (not promoted to
-# #growth-reports yet - see rmkt_weekly_pass.py). Same 3-attempt dashboard-readiness retry
+# #demand-reports yet - see rmkt_weekly_pass.py). Same 3-attempt dashboard-readiness retry
 # pattern as daily-rule-pass.yml, since rmkt_weekly_pass.py uses the same readiness gate -
 # just all three attempts land on Monday instead of every day.
 #   08:00 UTC Mon = 13:30 IST - attempt 1
