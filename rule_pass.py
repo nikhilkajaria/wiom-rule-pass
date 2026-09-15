@@ -31,6 +31,15 @@ AGE_GRACE_DAYS    = 7             # v2.3.0: below CREATIVE_BC_GATE is fine withi
                                     # brake spend floor becomes kill-eligible (closes the case where
                                     # a creative never crosses either gate and sits in MONITOR forever)
 ZERO_BC_SPEND    = 10000         # Rs lifetime spend, 0 bc -> kill
+L7_ZERO_BC_SPEND  = 5000          # v2.11: Rs L7-window spend, 0 L7-window bc -> cold flag (advisory,
+                                  # not an auto-kill). Half of ZERO_BC_SPEND, not a direct scaled-down
+                                  # copy - a week is a much smaller fraction of "time to notice" than
+                                  # the lifetime bar implies, so this is deliberately conservative
+                                  # (would rather under-flag early than spam on ordinary day-to-day
+                                  # variance). Catches a creative that's gone completely cold recently
+                                  # even while its lifetime CPBC still looks fine - see JUL26-C-103/105,
+                                  # 2026-09-10, both showed L7 CPBC = inf on real L7 spend, invisible to
+                                  # the lifetime-only view until aged-out eventually caught up.
 KILL_MULT         = {'L1': 1.0, 'L2': 1.0, 'L3': 1.2, 'untagged': 1.0}
 DAILY_KILL_CAP    = 3             # v2.2.0: if efficiency-kill candidates > 3, rank by ratio worst-first, cap at 3
 TOP_SPENDER_SHARE = 0.10          # v2.2.0: warn (not block) if kill candidate holds >10% of pool daily avg spend
@@ -867,7 +876,7 @@ def cpbc_l7(rec):
     return rec['w7s'] / b if b else float('inf')
 
 
-def decide(data, age, cstar, active, funnel_geo=None, variant='lifetime', pool_key='Delhi'):
+def decide(data, age, cstar, active, funnel_geo=None, variant='lifetime', pool_key='Delhi', daily_kill_cap=None):
     """variant='lifetime' (default, production): efficiency judged on lifetime CPBC vs a
     lifetime median - exactly the committed v2.6.0 behavior, unchanged.
     variant='l7d' (experimental, under observation via l7d_diff_pass.py - NOT wired into
@@ -895,6 +904,19 @@ def decide(data, age, cstar, active, funnel_geo=None, variant='lifetime', pool_k
         elig = [c for c in spent if act(c) and pool[c]['bc'] >= CREATIVE_BC_GATE]
         med = statistics.median([cpbc(pool[c]) for c in elig]) if elig else None
     res['median'] = med
+    # v2.11 (2026-09-15, Nikhil - promoted from l7d_diff_pass.py after 8 days of validated
+    # evidence): computed unconditionally, even on the lifetime path, so a lifetime KILL can
+    # be checked against the pool's own L7D reality before it fires - see l7d_hold below.
+    # 8-day track record (Sep6-14): JUN26-T-063 was lifetime-KILLed 6 of 8 days while its L7D
+    # read was consistently fine; JUN26-T-083 (470+ BC) 5 of 8 days the same way. The L7D
+    # median itself ran 10-35% below the lifetime median every single day and the gap WIDENED
+    # through the week - the pool's real recent efficiency was consistently ahead of what
+    # lifetime blending could see, not noise.
+    l7d_elig = [c for c in spent if act(c) and pool[c].get('w7b', 0) >= L7_MEDIAN_BC_GATE]
+    med_l7d = statistics.median([cpbc_l7(pool[c]) for c in l7d_elig]) if l7d_elig else None
+    res['median_l7d'] = med_l7d
+    res['l7d_held'] = []   # lifetime KILL candidates spared because L7D clears - MONITOR instead
+    res['l7d_cold'] = []   # advisory only: real L7D spend, zero L7D bookings, regardless of lifetime CPBC
     brake_spend = max(BRAKE_CSTAR_MULT * cstar, BRAKE_SPEND_FLOOR) if cstar else BRAKE_SPEND_FLOOR
     res['brake_spend'] = brake_spend
     verdict = {}
@@ -906,12 +928,27 @@ def decide(data, age, cstar, active, funnel_geo=None, variant='lifetime', pool_k
         mult = KILL_MULT.get(lyr, 1.0)
         if lyr == 'L3' and L3_FLIP: mult = 1.0
         kt = (mult * med) if med else None
+        # v2.11: cold flag - real recent spend, zero recent bookings, regardless of lifetime
+        # CPBC. Advisory only (does not touch verdict/kills) - catches a creative gone cold
+        # this week that lifetime-only judging won't see until it ages out.
+        if rec.get('w7b', 0) == 0 and rec.get('w7s', 0) >= L7_ZERO_BC_SPEND:
+            res['l7d_cold'].append((c, lyr, rec['need'], lb, sp, x, f'L7 spend Rs{rec["w7s"]:,.0f}, 0 L7 bookings'))
         if lb == 0 and sp >= ZERO_BC_SPEND:
             verdict[c] = 'KILL'; res['kills'].append((c, lyr, rec['need'], lb, sp, x, 'zero-BC')); continue
         if kt and sp >= brake_spend and x >= BRAKE_CPBC_MULT * kt:
             verdict[c] = 'KILL_REVIEW'; res['reviews'].append((c, lyr, rec['need'], lb, sp, x, f'brake (>=2x line, spend Rs{sp:,.0f})')); continue
         if lb >= CREATIVE_BC_GATE and kt:
             if judged > kt:
+                # v2.11: hold-before-kill - a lifetime efficiency-kill candidate clears if its
+                # OWN L7D CPBC is at/below the pool's L7D median, i.e. it's genuinely fine right
+                # now even though lifetime history says otherwise. l7d variant runs (the
+                # experimental diff itself) are exempt - this only protects the production path.
+                if (variant != 'l7d' and med_l7d and rec.get('w7b', 0) >= L7_MEDIAN_BC_GATE
+                        and x_l7 <= med_l7d):
+                    verdict[c] = 'MONITOR'
+                    res['l7d_held'].append((c, lyr, rec['need'], lb, sp, x,
+                        f'lifetime flagged (> {mult}x median Rs{med:,.0f}) but L7 CPBC Rs{x_l7:,.0f} <= L7median Rs{med_l7d:,.0f} - held'))
+                    continue
                 reason = (f'efficiency (L7 CPBC Rs{x_l7:,.0f} > {mult}x L7median Rs{med:,.0f}; lifetime Rs{x:,.0f})'
                           if variant == 'l7d' else f'efficiency (> {mult}x median Rs{med:,.0f})')
                 eff_kill_candidates.append((c, lyr, rec['need'], lb, sp, x, reason, judged / med))
@@ -976,11 +1013,13 @@ def decide(data, age, cstar, active, funnel_geo=None, variant='lifetime', pool_k
     res['deferred_kills'] = []
     res['deferred_top_spender'] = []
     kills_taken = 0
+    cap = daily_kill_cap if daily_kill_cap is not None else DAILY_KILL_CAP
+    res['daily_kill_cap'] = cap
     for (c, lyr, need, lb, sp, x, reason, _ratio) in eff_kill_candidates:
         if is_top_spender(c):
             verdict[c] = 'MONITOR'
             res['deferred_top_spender'].append((c, lyr, need, lb, sp, x, reason))
-        elif kills_taken < DAILY_KILL_CAP:
+        elif kills_taken < cap:
             verdict[c] = 'KILL'
             res['kills'].append((c, lyr, need, lb, sp, x, reason))
             kills_taken += 1
@@ -1074,7 +1113,8 @@ def msg_daily(res, cstar, end, unacted=None, label='DEL BOOKNOW'):
     kills, reviews, cut = res['kills'], res['reviews'], res['prune_cut']
     integ = integrity_line(res)
     if (not kills and not reviews and not cut and not unacted and not res.get('deferred_kills')
-            and not res.get('deferred_top_spender') and not res.get('deferred_live_spend')):
+            and not res.get('deferred_top_spender') and not res.get('deferred_live_spend')
+            and not res.get('l7d_held') and not res.get('l7d_cold')):
         return f":white_check_mark: *BFC-VOLUME daily kill+prune* ({end}, {label}, lifetime): no kills, no brake, no prune. Pool {res['pool_n']}/{POOL_CAP}.\n{integ}"
     medlabel = "active-only median" if res['active_filter'] else "median (incl. paused)"
     if res['median']:
@@ -1102,8 +1142,14 @@ def msg_daily(res, cstar, end, unacted=None, label='DEL BOOKNOW'):
         lines.append("")
     deferred = res.get('deferred_kills', [])
     if deferred:
-        lines.append(f"*CAPPED - {len(deferred)} above threshold, deferred to MONITOR (daily cap {DAILY_KILL_CAP})*")
+        cap = res.get('daily_kill_cap', DAILY_KILL_CAP)
+        lines.append(f"*CAPPED - {len(deferred)} above threshold, deferred to MONITOR (daily cap {cap})*")
         for k in deferred: lines.append(_row(*k))
+        lines.append("")
+    l7d_held = res.get('l7d_held', [])
+    if l7d_held:
+        lines.append(f"*HELD ON L7D - {len(l7d_held)} lifetime-flagged, spared by trailing-7d read*  _held to MONITOR, not killed_")
+        for k in l7d_held: lines.append(_row(*k[:6], reason=k[6]))
         lines.append("")
     deferred_ts = res.get('deferred_top_spender', [])
     deferred_live = res.get('deferred_live_spend', [])
@@ -1125,6 +1171,11 @@ def msg_daily(res, cstar, end, unacted=None, label='DEL BOOKNOW'):
     if cut:
         lines.append(f"*PRUNE - pool over cap {POOL_CAP}, cut weakest ({len(cut)})*")
         lines.append("   " + ", ".join(f"`{c}`" for c in cut))
+        lines.append("")
+    l7d_cold = res.get('l7d_cold', [])
+    if l7d_cold:
+        lines.append(f"*L7D COLD - {len(l7d_cold)} real recent spend, zero recent bookings*  _advisory only, not a kill signal_")
+        for k in l7d_cold: lines.append(_row(*k[:6], reason=k[6]))
         lines.append("")
     lines.append(f"Held: CONTINUE {res['continue']}, MONITOR {res['monitor']}")
     lines.append(ads_link())
@@ -1480,10 +1531,18 @@ def main():
     else: slack_post(msg, dm_only=args.dm_only)
 
     if args.mode == 'daily':
-        # DEL_SCALE_BFC: advisory-only (Nikhil, 2026-09-12: "reco only - no hard calls" -
-        # the pool is still ramping, not a candidate for msg_daily()'s KILL framing yet).
-        # DM-only always, independent of --dm-only, same as cstar/maturity tracking below.
-        scale_msg = build_scale_advisory_msg(data, active_scale, end)
+        # DEL_SCALE_BFC: promoted to real KILL/MONITOR authority (v2.11, 2026-09-15, Nikhil) -
+        # exited Meta learning (learning_stage_info.status=SUCCESS, confirmed live) with real
+        # trailing volume (101 BC over the last 7 days, same order of magnitude as DEL_ALL_PBFC
+        # itself). build_scale_advisory_msg()'s pure-observation framing from 2026-09-12 is
+        # retired (left defined, not deleted, in case this needs to roll back fast) - this pool
+        # is no longer "still ramping" by the numbers. Kept deliberately conservative for its
+        # first week off learning: daily_kill_cap=1 (vs the normal 3) and DM-only rather than
+        # the full channel, since "exited learning" and "settled" aren't the same thing yet.
+        # Re-evaluate after a week of real kill behavior - graduate to the normal cap and the
+        # #growth-reports channel once it's proven stable.
+        res_scale = decide(data, age, cstar, active_scale, funnel_geo=funnel_geo, pool_key='Delhi_Scale', daily_kill_cap=1)
+        scale_msg = msg_daily(res_scale, cstar, end, label='DEL SCALE BOOKNOW')
         if args.dry_run or args.no_post: print("\n" + scale_msg)
         else: slack_post(scale_msg, dm_only=True)
 
