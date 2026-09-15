@@ -1,0 +1,32 @@
+name: Weekly-pass watchdog (DM only)
+
+# Checks whether all three Monday-scheduled passes (Bharat weekly, RMKT weekly, BFC-VOLUME
+# weekly ISOLATE/geo review) actually posted a successful run this week - see
+# weekly_pass_watchdog.py. Runs Monday 19:00 IST, after all three passes' last scheduled
+# chance that day (bharat/rmkt's last retry is 17:30 IST; weekly-rule-pass is single-shot
+# at 13:30 IST with no retry ladder). Built 2026-09-15 after a same-week GH Actions-wide
+# scheduling gap (2026-09-14) went unnoticed until a human asked - the only signal before
+# this was silence in the DM.
+on:
+  schedule:
+    - cron: '30 13 * * 1'   # 13:30 UTC Mon = 19:00 IST
+  workflow_dispatch: {}
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check weekly passes fired this week
+        run: python weekly_pass_watchdog.py
+        env:
+          WIOM_DASHBOARD_TOKEN: ${{ secrets.WIOM_DASHBOARD_TOKEN }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
