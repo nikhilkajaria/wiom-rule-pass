@@ -100,25 +100,26 @@ def rmkt_compute(d1, last_activation=None):
         ins = r.get('app_installs') or 0
         raw[g][cid].append((dt, sp, bf, ins, rp.layer_of(nm), rp.need_of(nm)))
 
+    # v2.12 (2026-09-15): keyed (geo, cid), not cid alone - see rule_pass.compute()'s matching
+    # comment (AUG26-T-120/T-121 incident) for why a cid-global first[]/window_start[] falsely
+    # ages out a concept that's brand-new in THIS pool but has older history in another.
     first = {}
     for g, cmap in raw.items():
         for cid, rws in cmap.items():
             spent_dates = [dt for dt, sp, bf, ins, lyr, need in rws if sp > 0]
             if spent_dates:
-                d0 = min(spent_dates)
-                if cid not in first or d0 < first[cid]:
-                    first[cid] = d0
+                first[(g, cid)] = min(spent_dates)
 
     window_start = {}
-    for cid, d0 in first.items():
+    for (g, cid), d0 in first.items():
         la = last_activation.get(cid)
-        window_start[cid] = max(d0, la) if la else d0
+        window_start[(g, cid)] = max(d0, la) if la else d0
 
     data = collections.defaultdict(lambda: collections.defaultdict(
         lambda: {'spend': 0.0, 'bc': 0, 'inst': 0, 'w7s': 0.0, 'w7i': 0, 'layer': 'untagged', 'need': '?'}))
     for g, cmap in raw.items():
         for cid, rws in cmap.items():
-            wstart = window_start.get(cid) or first.get(cid, '')
+            wstart = window_start.get((g, cid)) or first.get((g, cid), '')
             rec = data[g][cid]
             for dt, sp, bf, ins, lyr, need in rws:
                 rec['layer'] = lyr
@@ -133,11 +134,11 @@ def rmkt_compute(d1, last_activation=None):
                     rec['w7b'] = rec.get('w7b', 0) + bf
 
     age = {}
-    for cid, ds in window_start.items():
+    for (g, cid), ds in window_start.items():
         try:
-            age[cid] = (d1 - datetime.date.fromisoformat(ds)).days
+            age[(g, cid)] = (d1 - datetime.date.fromisoformat(ds)).days
         except Exception:
-            age[cid] = 999
+            age[(g, cid)] = 999
 
     cstar = None
     try:
@@ -199,7 +200,7 @@ def main():
     data, age, cstar, funnel_geo = rmkt_compute(d1, last_activation)
     res = rp.decide(data, age, cstar, active, funnel_geo=funnel_geo)
 
-    msg = (rp.msg_daily(res, cstar, end)
+    msg = (rp.msg_daily(res, cstar, end, label='')
            .replace('BFC-VOLUME', 'RETARGETING')
            .replace('daily kill + prune', 'weekly kill + prune')
            .replace('daily cap', 'per-run cap'))

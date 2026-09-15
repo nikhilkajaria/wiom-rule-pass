@@ -811,24 +811,36 @@ def compute(d1, last_activation=None):
         dt = str(r.get('date', '')); sp = r.get('spend') or 0; bf = r.get('booking_confirmed') or 0; ins = r.get('app_installs') or 0
         raw[g][cid].append((dt, sp, bf, ins, layer_of(nm), need_of(nm)))
 
+    # v2.12 (2026-09-15, Nikhil - caught live): first/window_start/age keyed by (geo, cid),
+    # NOT cid alone. Confirmed live 2026-09-14: AUG26-T-120/T-121 got created fresh in
+    # DEL_ALL_PBFC (and 5 other pools) at 19:20-19:22 IST that evening, but the same concept
+    # had been continuously active in BHARAT_LUCKNOW_AI since 2026-08-25 with no pause - a
+    # cid-global first[] took the MIN across every pool, so the brand-new Delhi PBFC instance
+    # inherited Lucknow's 3-week-old first-spend date and got flagged aged-out on its very
+    # first full day. get_last_activation_dates() can't rescue this either - it's account-wide
+    # Activity Log (not ad-set-scoped, see _fetch_activity_events docstring), and creating a
+    # NEW ad object doesn't emit an Inactive->Active transition event the way a genuine pause/
+    # reactivate does, so there's no reactivation signal to catch here at all. The fix: each
+    # pool already tracks its own spend history separately via raw[g][cid]/data[g][cid] - first
+    # and window_start just need to respect that same per-pool boundary instead of collapsing
+    # across it.
     first = {}
     for g, cmap in raw.items():
         for cid, rws in cmap.items():
             spent_dates = [dt for dt, sp, bf, ins, lyr, need in rws if sp > 0]
             if spent_dates:
-                d0 = min(spent_dates)
-                if cid not in first or d0 < first[cid]: first[cid] = d0
+                first[(g, cid)] = min(spent_dates)
 
     window_start = {}
-    for cid, d0 in first.items():
+    for (g, cid), d0 in first.items():
         la = last_activation.get(cid)
-        window_start[cid] = max(d0, la) if la else d0
+        window_start[(g, cid)] = max(d0, la) if la else d0
 
     data = collections.defaultdict(lambda: collections.defaultdict(
         lambda: {'spend': 0.0, 'bc': 0, 'inst': 0, 'w7s': 0.0, 'w7i': 0, 'layer': 'untagged', 'need': '?'}))
     for g, cmap in raw.items():
         for cid, rws in cmap.items():
-            wstart = window_start.get(cid) or first.get(cid, '')
+            wstart = window_start.get((g, cid)) or first.get((g, cid), '')
             rec = data[g][cid]
             for dt, sp, bf, ins, lyr, need in rws:
                 rec['layer'] = lyr; rec['need'] = need
@@ -858,10 +870,11 @@ def compute(d1, last_activation=None):
     # age keys off window_start (not first-ever-spend) so a reactivated creative gets the
     # same AGE_GRACE_DAYS runway as a brand-new one, instead of appearing "aged out" (past
     # grace) while its fresh-window bookings are still thin - see reactivation-window note.
+    # age is keyed (geo, cid) too, same reason as first/window_start above.
     age = {}
-    for cid, ds in window_start.items():
-        try: age[cid] = (d1 - datetime.date.fromisoformat(ds)).days
-        except Exception: age[cid] = 999
+    for (g, cid), ds in window_start.items():
+        try: age[(g, cid)] = (d1 - datetime.date.fromisoformat(ds)).days
+        except Exception: age[(g, cid)] = 999
     cstar = None
     try:
         wr = dget('/api/war_room?' + urllib.parse.urlencode({'start': metric_start, 'end': d1.isoformat()}))
@@ -959,7 +972,7 @@ def decide(data, age, cstar, active, funnel_geo=None, variant='lifetime', pool_k
             if judged <= ISOLATE_MULT * med and lb >= ISOLATE_BC_GATE:
                 verdict[c] = 'ISOLATE'; res['isolates'].append((c, lyr, rec['need'], lb, sp, x)); continue
             verdict[c] = 'CONTINUE' if judged < med else 'MONITOR'
-        elif kt and age.get(c, 0) > AGE_GRACE_DAYS and x > kt:
+        elif kt and age.get((pool_key, c), 0) > AGE_GRACE_DAYS and x > kt:
             # v2.3.0: aged-out - past the 7-day grace window, still below the lifetime
             # BC gate (thin sample) and under the brake spend floor (else the brake
             # check above would already have caught it), but already CPBC-bad enough
@@ -992,7 +1005,7 @@ def decide(data, age, cstar, active, funnel_geo=None, variant='lifetime', pool_k
     pool_w7s = {c: pool[c]['w7s'] for c in spent if act(c)}
     pool_total_w7s = sum(pool_w7s.values())
     def _daily_rate(c):
-        days = min(max(age.get(c, 7), 1), 7)
+        days = min(max(age.get((pool_key, c), 7), 1), 7)
         return pool_w7s[c] / days
     implied_w7s = {c: _daily_rate(c) * 7 for c in pool_w7s}
     top2 = sorted(implied_w7s, key=lambda c: -implied_w7s[c])[:2]
@@ -1115,17 +1128,23 @@ def integrity_line(res):
 def msg_daily(res, cstar, end, unacted=None, label='DEL BOOKNOW'):
     kills, reviews, cut = res['kills'], res['reviews'], res['prune_cut']
     integ = integrity_line(res)
+    title_prefix = f"{label} - " if label else ""
     if (not kills and not reviews and not cut and not unacted and not res.get('deferred_kills')
             and not res.get('deferred_top_spender') and not res.get('deferred_live_spend')
             and not res.get('l7d_held') and not res.get('l7d_cold')):
-        return f":white_check_mark: *BFC-VOLUME daily kill+prune* ({end}, {label}, lifetime): no kills, no brake, no prune. Pool {res['pool_n']}/{POOL_CAP}.\n{integ}"
+        return f":white_check_mark: *{title_prefix}BFC-VOLUME daily kill+prune* ({end}, lifetime): no kills, no brake, no prune. Pool {res['pool_n']}/{POOL_CAP}.\n{integ}"
     medlabel = "active-only median" if res['active_filter'] else "median (incl. paused)"
     if res['median']:
-        head = (f":scales: *BFC-VOLUME daily kill + prune* ({end}, {label}, lifetime)\n"
+        # v2.12 (2026-09-15, Nikhil - caught live): label moved to the FRONT of the bold title,
+        # not buried in the parenthetical - the Sep14 test post had both the Delhi pool and
+        # DEL_SCALE_BFC pool titled identically ("BFC-VOLUME daily kill + prune"), only
+        # distinguishable by reading into the "(..., DEL SCALE BOOKNOW, ...)" parenthetical,
+        # easy to miss skimming a channel feed.
+        head = (f":scales: *{title_prefix}BFC-VOLUME daily kill + prune* ({end}, lifetime)\n"
                 f"{medlabel} CPBC Rs{res['median']:,.0f} | C* Rs{cstar:,.0f} | brake Rs{res['brake_spend']:,.0f} | pool {res['pool_n']}/{POOL_CAP}\n"
                 f"_Decisions for review - read-only, pausing is a manual step in Ads Manager._")
     else:
-        head = f":scales: *BFC-VOLUME daily kill + prune* ({end})"
+        head = f":scales: *{title_prefix}BFC-VOLUME daily kill + prune* ({end})"
     lines = [head, integ, ""]
     if unacted:
         lines.append(f":warning: *NOT ACTED UPON - yesterday's KILLs still ACTIVE ({len(unacted)})*")
@@ -1353,7 +1372,7 @@ def build_maturity_tracking_msg(data, age, active, end):
     for cid, rec in pool.items():
         if active is not None and cid not in active: continue
         if rec['spend'] <= 0: continue
-        a = age.get(cid, 999)
+        a = age.get(('Delhi', cid), 999)
         lifetime_raw = cpbc(rec)
         l7_raw = cpbc_l7(rec)
         mf = maturity_fraction(a)
