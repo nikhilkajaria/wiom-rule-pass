@@ -6,15 +6,21 @@ name: Daily MUMBAI_CSP99_SPL monitor (DM only)
 # (dashboard_readiness.py) - so this uses the SAME 3-attempt retry ladder as
 # weekly-bharat-pass.yml/daily-rule-pass.yml, just daily instead of Monday-only (2026-09-12,
 # Nikhil: "timings are also affected by growth dashboard data update").
-#   08:00 UTC = 13:30 IST - attempt 1
-#   10:00 UTC = 15:30 IST - attempt 2
-#   12:00 UTC = 17:30 IST - attempt 3 (last retry - alerts DM instead of quietly postponing if
+#   08:31 UTC = 14:01 IST - attempt 1
+#   10:31 UTC = 16:01 IST - attempt 2
+#   12:31 UTC = 18:01 IST - attempt 3 (last retry - alerts DM instead of quietly postponing if
 #                            data is still not ready)
+#
+# Minute offset (2026-09-16): staggered off the round hour along with every
+# other daily/weekly pass in this repo, to avoid GH Actions' round-minute
+# cron congestion (see daily-rule-pass.yml for the full writeup). This is a
+# read-only DM-only monitor on the smallest, newest market, so it gets the
+# lowest priority - last offset (+31 min) of the six staggered workflows.
 on:
   schedule:
-    - cron: '0 8 * * *'
-    - cron: '0 10 * * *'
-    - cron: '0 12 * * *'
+    - cron: '31 8 * * *'
+    - cron: '31 10 * * *'
+    - cron: '31 12 * * *'
   workflow_dispatch: {}
 
 jobs:
@@ -35,9 +41,9 @@ jobs:
         id: retry
         run: |
           case "${{ github.event.schedule }}" in
-            "0 8 * * *")  echo "flag=" >> "$GITHUB_OUTPUT" ;;
-            "0 10 * * *") echo "flag=" >> "$GITHUB_OUTPUT" ;;
-            "0 12 * * *") echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;
+            "31 8 * * *")  echo "flag=" >> "$GITHUB_OUTPUT" ;;
+            "31 10 * * *") echo "flag=" >> "$GITHUB_OUTPUT" ;;
+            "31 12 * * *") echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;
             *)            echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;  # workflow_dispatch - one shot
           esac
       - name: Run Mumbai daily pass and post to Slack (DM only)

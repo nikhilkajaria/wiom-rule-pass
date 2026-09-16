@@ -8,9 +8,9 @@ name: Daily BFC-VOLUME rule-pass
 # crashed a run once - so instead of one fixed time, this checks dashboard
 # readiness (see dashboard_readiness.py) at three points and only actually
 # runs once data looks complete:
-#   08:00 UTC = 13:30 IST - attempt 1
-#   10:00 UTC = 15:30 IST - attempt 2
-#   12:00 UTC = 17:30 IST - attempt 3 (last retry - alerts instead of
+#   08:03 UTC = 13:33 IST - attempt 1
+#   10:03 UTC = 15:33 IST - attempt 2
+#   12:03 UTC = 17:33 IST - attempt 3 (last retry - alerts instead of
 #                            quietly postponing if data is still not ready)
 # Each attempt is the SAME script re-run from scratch; rule_pass.py's own
 # idempotency guard (rule_pass_readiness_state.json) skips a no-op if an
@@ -18,11 +18,23 @@ name: Daily BFC-VOLUME rule-pass
 # attempt this is gets read from github.event.schedule (the exact cron
 # string that fired this run) rather than the current clock time, so a
 # delayed run still gets classified correctly.
+#
+# Minute offset (2026-09-16): every daily/weekly pass in this repo used to
+# fire on the exact round hour (0 8/10/12 * * *), and GH Actions' shared
+# cron dispatcher was found to delay those popular round-minute triggers by
+# 1-6 hours (confirmed via createdAt vs scheduled-slot deltas on real runs -
+# startedAt always matched createdAt, so the delay was in GitHub's own
+# trigger dispatch, not runner contention). Staggered every workflow here
+# off the round minute, ordered by priority - this is the main Delhi
+# BFC-VOLUME kill pass, so it gets the earliest offset (+3 min) of all six
+# affected workflows (see budget-shift-pass.yml, daily-mumbai-pass.yml,
+# weekly-bharat-pass.yml, weekly-rmkt-pass.yml, weekly-rule-pass.yml for
+# the rest of the stagger).
 on:
   schedule:
-    - cron: '0 8 * * *'
-    - cron: '0 10 * * *'
-    - cron: '0 12 * * *'
+    - cron: '3 8 * * *'
+    - cron: '3 10 * * *'
+    - cron: '3 12 * * *'
   workflow_dispatch: {}        # lets you trigger a manual run from the Actions tab
 
 jobs:
@@ -44,9 +56,9 @@ jobs:
         id: retry
         run: |
           case "${{ github.event.schedule }}" in
-            "0 8 * * *")  echo "flag=" >> "$GITHUB_OUTPUT" ;;
-            "0 10 * * *") echo "flag=" >> "$GITHUB_OUTPUT" ;;
-            "0 12 * * *") echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;
+            "3 8 * * *")  echo "flag=" >> "$GITHUB_OUTPUT" ;;
+            "3 10 * * *") echo "flag=" >> "$GITHUB_OUTPUT" ;;
+            "3 12 * * *") echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;
             *)            echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;  # workflow_dispatch (manual) - one shot, alert if not ready
           esac
       - name: Run daily kill + prune pass and post to Slack (#demand-reports + DM)

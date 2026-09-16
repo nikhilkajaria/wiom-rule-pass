@@ -19,11 +19,18 @@ name: Daily Budget Shift Pass
 # Checks 7-day rolling Meta vs Google CPBL, triggers a shift recommendation
 # if the gap > 10% for 3 consecutive days. Read-only: posts to Slack,
 # human approves and executes. Never writes to any ad platform.
+#
+# Minute offset (2026-09-16): staggered off the round hour along with every
+# other daily/weekly pass in this repo, to avoid GH Actions' round-minute
+# cron congestion (see daily-rule-pass.yml for the full writeup). This is
+# a daily budget-reallocation advisory (real money, but read-only/DM until
+# a human executes it), so it sits third in priority (+14 min) behind the
+# two rule-pass kill workflows.
 on:
   schedule:
-    - cron: '0 8 * * *'
-    - cron: '0 10 * * *'
-    - cron: '0 12 * * *'
+    - cron: '14 8 * * *'
+    - cron: '14 10 * * *'
+    - cron: '14 12 * * *'
   workflow_dispatch: {}
 
 jobs:
@@ -46,9 +53,9 @@ jobs:
         id: retry
         run: |
           case "${{ github.event.schedule }}" in
-            "0 8 * * *")  echo "flag=" >> "$GITHUB_OUTPUT" ;;
-            "0 10 * * *") echo "flag=" >> "$GITHUB_OUTPUT" ;;
-            "0 12 * * *") echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;
+            "14 8 * * *")  echo "flag=" >> "$GITHUB_OUTPUT" ;;
+            "14 10 * * *") echo "flag=" >> "$GITHUB_OUTPUT" ;;
+            "14 12 * * *") echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;
             *)            echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;  # workflow_dispatch (manual) - one shot, alert if not ready
           esac
 

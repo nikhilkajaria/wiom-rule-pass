@@ -4,15 +4,21 @@ name: Weekly RETARGETING kill+prune (DM only)
 # #demand-reports yet - see rmkt_weekly_pass.py). Same 3-attempt dashboard-readiness retry
 # pattern as daily-rule-pass.yml, since rmkt_weekly_pass.py uses the same readiness gate -
 # just all three attempts land on Monday instead of every day.
-#   08:00 UTC Mon = 13:30 IST - attempt 1
-#   10:00 UTC Mon = 15:30 IST - attempt 2
-#   12:00 UTC Mon = 17:30 IST - attempt 3 (last retry - alerts DM instead of quietly
+#   08:19 UTC Mon = 13:49 IST - attempt 1
+#   10:19 UTC Mon = 15:49 IST - attempt 2
+#   12:19 UTC Mon = 17:49 IST - attempt 3 (last retry - alerts DM instead of quietly
 #                                postponing if data is still not ready)
+#
+# Minute offset (2026-09-16): staggered off the round hour along with every
+# other daily/weekly pass in this repo, to avoid GH Actions' round-minute
+# cron congestion (see daily-rule-pass.yml for the full writeup). This is
+# a weekly kill+prune pass with real kill logic (unlike Bharat's advisory-
+# only ranking), so it gets the fourth offset (+19 min).
 on:
   schedule:
-    - cron: '0 8 * * 1'
-    - cron: '0 10 * * 1'
-    - cron: '0 12 * * 1'
+    - cron: '19 8 * * 1'
+    - cron: '19 10 * * 1'
+    - cron: '19 12 * * 1'
   workflow_dispatch: {}
 
 jobs:
@@ -36,9 +42,9 @@ jobs:
         id: retry
         run: |
           case "${{ github.event.schedule }}" in
-            "0 8 * * 1")  echo "flag=" >> "$GITHUB_OUTPUT" ;;
-            "0 10 * * 1") echo "flag=" >> "$GITHUB_OUTPUT" ;;
-            "0 12 * * 1") echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;
+            "19 8 * * 1")  echo "flag=" >> "$GITHUB_OUTPUT" ;;
+            "19 10 * * 1") echo "flag=" >> "$GITHUB_OUTPUT" ;;
+            "19 12 * * 1") echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;
             *)            echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;  # workflow_dispatch - one shot
           esac
       - name: Run weekly RETARGETING pass and post to Slack (DM only)
