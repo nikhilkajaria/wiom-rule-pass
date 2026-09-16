@@ -2,9 +2,24 @@ name: Weekly BFC-VOLUME review
 
 # The batched weekly edit (the core L1 + L3 rhythm, done together). Routine creative/geo edits
 # happen here, not daily - trickling daily changes resets Meta's learning phase.
-# Cron is UTC. '8 8 * * 1' = Monday ~13:38 IST - same time of day as the daily
-# rule-pass (daily-rule-pass.yml), just weekly instead of daily. Moved from
-# 11:30 IST 2026-07-15 alongside the daily pass.
+#
+# 3-attempt retry (2026-09-16): previously ran once, unconditionally, at a single fixed
+# time - no readiness check, no idempotency marker, no retry ladder, unlike every other
+# dashboard-dependent pass in this repo. That meant a weekly review could run against
+# still-loading D-1 data with no fallback, the exact erratic-ETL-timing risk the daily
+# gate (dashboard_readiness.py) was built to avoid. Now uses the same 3-attempt gate as
+# daily-rule-pass.yml, just all three attempts land on Monday instead of every day:
+#   08:08 UTC Mon = 13:38 IST - attempt 1
+#   10:08 UTC Mon = 15:38 IST - attempt 2
+#   12:08 UTC Mon = 17:38 IST - attempt 3 (last retry - alerts instead of
+#                                quietly postponing if data is still not ready)
+# Each attempt is the SAME script re-run from scratch; rule_pass.py's own idempotency
+# guard (rule_pass_weekly_readiness_state.json - a SEPARATE file from the daily pass's
+# rule_pass_readiness_state.json, so the two never collide) skips a no-op if an earlier
+# attempt already completed successfully for this Monday's D-1. Which attempt this is
+# gets read from github.event.schedule (the exact cron string that fired this run)
+# rather than the current clock time, so a delayed run still gets classified correctly.
+#
 # Minute offset (2026-09-16): staggered off the round hour along with every
 # other daily/weekly pass in this repo, to avoid GH Actions' round-minute
 # cron congestion (see daily-rule-pass.yml for the full writeup). This is
@@ -13,6 +28,8 @@ name: Weekly BFC-VOLUME review
 on:
   schedule:
     - cron: '8 8 * * 1'
+    - cron: '8 10 * * 1'
+    - cron: '8 12 * * 1'
   workflow_dispatch: {}
 
 jobs:
@@ -23,10 +40,59 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          pip install google-ads google-auth
+      - name: Configure git for the readiness-state commit
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+      - name: Determine retry attempt
+        id: retry
+        run: |
+          case "${{ github.event.schedule }}" in
+            "8 8 * * 1")  echo "flag=" >> "$GITHUB_OUTPUT" ;;
+            "8 10 * * 1") echo "flag=" >> "$GITHUB_OUTPUT" ;;
+            "8 12 * * 1") echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;
+            *)            echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;  # workflow_dispatch (manual) - one shot, alert if not ready
+          esac
       - name: Run weekly review (full batched roster) and post to Slack
-        run: python rule_pass.py --mode weekly
+        run: python rule_pass.py --mode weekly ${{ steps.retry.outputs.flag }}
         env:
           WIOM_DASHBOARD_TOKEN: ${{ secrets.WIOM_DASHBOARD_TOKEN }}
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+          META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
+          GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
+          GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}
+          GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}
+          GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}
+          GOOGLE_ADS_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_CUSTOMER_ID }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           # SLACK_CHANNEL_ID defaults to #demand-reports (C0C216DU0P6); SLACK_DM_USER_ID to U05A9037VFG. Override here only if they change.
+      - name: Commit readiness state (idempotency marker)
+        # Same pattern as daily-rule-pass.yml's matching step - see there for why this
+        # writes only if the file exists/changed, and retries push-then-merge on rejection
+        # rather than failing the whole job. Commits rule_pass_weekly_readiness_state.json,
+        # a file no other workflow touches, so there is nothing to conflict with.
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          if [ -f rule_pass_weekly_readiness_state.json ]; then
+            git add rule_pass_weekly_readiness_state.json
+            if ! git diff --cached --quiet; then
+              git commit -m "rule-pass weekly readiness state: $(date -u +%Y-%m-%d)"
+              for i in 1 2 3 4 5; do
+                if git push; then
+                  break
+                fi
+                echo "push rejected (attempt $i) - fetching + merging and retrying"
+                git fetch origin main
+                if ! git merge origin/main --no-edit; then
+                  echo "merge conflict - aborting, will retry next scheduled run"
+                  git merge --abort || true
+                  break
+                fi
+                sleep $((RANDOM % 5 + 1))
+              done
+            fi
+          fi

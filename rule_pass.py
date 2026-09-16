@@ -1462,27 +1462,37 @@ def main():
         now_ist = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=5, minutes=30)
         d1 = (now_ist - datetime.timedelta(days=1)).date()
 
-    # Dashboard-readiness gate (v2.4.0, 2026-07-17): only for real, unattended
-    # scheduled runs - a --dry-run preview or a --date backtest is an
-    # intentional manual action, not subject to the retry schedule. Skipped
-    # for --mode weekly too (not part of this request; the weekly review's
-    # own schedule is unchanged). See dashboard_readiness.py for why (D-1
-    # data has been landing at erratic times, once crashed a run outright)
-    # and daily-rule-pass.yml for the 13:30/15:30/17:30 IST retry triggers.
-    if args.mode == 'daily' and not args.dry_run and not args.date:
+    # Dashboard-readiness gate (v2.4.0, 2026-07-17; extended to --mode weekly
+    # 2026-09-16): only for real, unattended scheduled runs - a --dry-run
+    # preview or a --date backtest is an intentional manual action, not
+    # subject to the retry schedule. Originally daily-only ("not part of
+    # this request" at the time); weekly had no readiness check, no
+    # idempotency marker, and no retry ladder, so it just ran once against
+    # whatever D-1 data happened to be available at its single 13:30 IST
+    # slot - the same erratic-ETL-timing risk the daily gate was built to
+    # avoid. Same mechanism now covers both modes, keyed to a
+    # mode-specific state file (rule_pass_readiness_state.json vs
+    # rule_pass_weekly_readiness_state.json) so daily and weekly retries
+    # never collide. See dashboard_readiness.py for why the gate exists
+    # (D-1 data has been landing at erratic times, once crashed a run
+    # outright) and daily-rule-pass.yml / weekly-rule-pass.yml for each
+    # mode's retry triggers.
+    if not args.dry_run and not args.date:
         from dashboard_readiness import is_dashboard_data_ready, already_completed_today, mark_completed_today
-        if already_completed_today('rule_pass', d1):
+        readiness_script = 'rule_pass' if args.mode == 'daily' else 'rule_pass_weekly'
+        if already_completed_today(readiness_script, d1):
             print(f'already completed for {d1} - skipping (idempotent retry guard)')
             return
         ready, dash_total, actual_total = is_dashboard_data_ready(d1)
         if not ready:
             dash_s = f"Rs{dash_total:,.0f}" if dash_total is not None else 'n/a'
             act_s = f"Rs{actual_total:,.0f}" if actual_total is not None else 'n/a'
+            label = 'daily kill+prune' if args.mode == 'daily' else 'weekly review'
             if args.last_retry:
                 token = os.environ.get('SLACK_BOT_TOKEN')
                 if token:
                     slack_post(
-                        f":rotating_light: *BFC-VOLUME daily kill+prune* - dashboard data for {d1} still "
+                        f":rotating_light: *BFC-VOLUME {label}* - dashboard data for {d1} still "
                         f"incomplete after 3 attempts (dashboard spend {dash_s} vs actual Meta+Google spend {act_s}). "
                         f"Pass did NOT run today - check the dashboard ETL.",
                         dm_only=False)
@@ -1579,9 +1589,10 @@ def main():
             if args.dry_run or args.no_post: print("\n" + maturity_msg)
             else: slack_post(maturity_msg, dm_only=True)  # always DM-only, independent of --dm-only
 
-    if args.mode == 'daily' and not args.dry_run and not args.date:
+    if not args.dry_run and not args.date:
         from dashboard_readiness import mark_completed_today
-        mark_completed_today('rule_pass', d1)  # after the post succeeds, so a crash mid-run allows retry
+        readiness_script = 'rule_pass' if args.mode == 'daily' else 'rule_pass_weekly'
+        mark_completed_today(readiness_script, d1)  # after the post succeeds, so a crash mid-run allows retry
 
 
 if __name__ == '__main__':
