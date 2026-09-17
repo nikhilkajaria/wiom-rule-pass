@@ -1568,12 +1568,14 @@ def main():
         # trailing volume (101 BC over the last 7 days, same order of magnitude as DEL_ALL_PBFC
         # itself). build_scale_advisory_msg()'s pure-observation framing from 2026-09-12 is
         # retired (left defined, not deleted, in case this needs to roll back fast) - this pool
-        # is no longer "still ramping" by the numbers. Kept deliberately conservative for its
-        # first week off learning: daily_kill_cap stays at 1 (vs the normal 3) - Nikhil promoted
-        # this to #demand-reports + DM on 2026-09-15, but the reduced cap is a separate decision
-        # not part of that ask, left untouched. Re-evaluate the cap after a week of real kill
-        # behavior on the channel.
-        res_scale = decide(data, age, cstar, active_scale, funnel_geo=funnel_geo, pool_key='Delhi_Scale', daily_kill_cap=1)
+        # is no longer "still ramping" by the numbers. Kept deliberately conservative
+        # (daily_kill_cap=1 vs the normal 3) for its first week off learning; that week passed
+        # with no issues (2026-09-17, Nikhil, after a live case where the only "why wasn't X
+        # killed" answer turned out to be X already being paused, not a cap/logic problem) -
+        # aligned to the same DAILY_KILL_CAP default DEL_ALL_PBFC uses, by omitting the
+        # override entirely rather than hardcoding 3, so the two pools stay in sync
+        # automatically if DAILY_KILL_CAP itself ever changes.
+        res_scale = decide(data, age, cstar, active_scale, funnel_geo=funnel_geo, pool_key='Delhi_Scale')
         scale_msg = msg_daily(res_scale, cstar, end, label='DEL SCALE BOOKNOW')
         if args.dry_run or args.no_post: print("\n" + scale_msg)
         else: slack_post(scale_msg, dm_only=False)
