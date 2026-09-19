@@ -1877,5 +1877,28 @@
     "date": "2026-09-17",
     "median_cpbc": 1029.02,
     "recos": []
+  },
+  {
+    "date": "2026-09-18",
+    "median_cpbc": 944.65,
+    "recos": [
+      {
+        "concept_id": "SEP26-C-124",
+        "layer": "L2",
+        "need": "UCR",
+        "verdict": "KILL",
+        "reason": "efficiency (> 1.0x median Rs945)",
+        "cpbc": 1166.36,
+        "bc": 110,
+        "spend": 128299.58,
+        "median_at_time": 944.65,
+        "top_spender": false,
+        "ad_ids": [
+          "120251926619590343"
+        ],
+        "action_taken": null,
+        "action_timing": null
+      }
+    ]
   }
 ]

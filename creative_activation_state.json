@@ -1,5 +1,5 @@
 {
-  "last_checked": "2026-09-17",
+  "last_checked": "2026-09-18",
   "events": {
     "JUN26-C-093": [
       {
@@ -6579,6 +6579,12 @@
         "date": "2026-09-17",
         "from": "Pending process",
         "to": "Inactive"
+      },
+      {
+        "ts": "2026-09-17T17:38:26",
+        "date": "2026-09-17",
+        "from": "Active",
+        "to": "Pending process"
       }
     ],
     "JUL26-C-104": [
@@ -7733,6 +7739,36 @@
         "date": "2026-09-16",
         "from": "Pending Review",
         "to": "Pending process"
+      },
+      {
+        "ts": "2026-09-18T18:16:51",
+        "date": "2026-09-18",
+        "from": "Pending process",
+        "to": "Active"
+      },
+      {
+        "ts": "2026-09-18T18:16:33",
+        "date": "2026-09-18",
+        "from": "Inactive",
+        "to": "Pending process"
+      },
+      {
+        "ts": "2026-09-18T17:59:57",
+        "date": "2026-09-18",
+        "from": "Pending process",
+        "to": "Pending Review"
+      },
+      {
+        "ts": "2026-09-18T17:56:46",
+        "date": "2026-09-18",
+        "from": "Update required",
+        "to": "Deleted"
+      },
+      {
+        "ts": "2026-09-17T17:59:10",
+        "date": "2026-09-17",
+        "from": "Active",
+        "to": "Update required"
       }
     ],
     "SEP26-C-123": [
