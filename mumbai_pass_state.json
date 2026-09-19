@@ -24,6 +24,11 @@
    "conversions": 48,
    "budget": 10000.0,
    "status": "LEARNING"
+  },
+  "2026-09-18": {
+   "conversions": 0,
+   "budget": 10000.0,
+   "status": "SUCCESS"
   }
  }
 }
