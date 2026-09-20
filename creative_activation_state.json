@@ -1,5 +1,5 @@
 {
-  "last_checked": "2026-09-18",
+  "last_checked": "2026-09-19",
   "events": {
     "JUN26-C-093": [
       {
@@ -7769,6 +7769,12 @@
         "date": "2026-09-17",
         "from": "Active",
         "to": "Update required"
+      },
+      {
+        "ts": "2026-09-18T18:08:48",
+        "date": "2026-09-18",
+        "from": "Pending Review",
+        "to": "Inactive"
       }
     ],
     "SEP26-C-123": [

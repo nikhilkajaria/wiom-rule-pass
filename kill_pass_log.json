@@ -1896,6 +1896,29 @@
         "ad_ids": [
           "120251926619590343"
         ],
+        "action_taken": "No",
+        "action_timing": null
+      }
+    ]
+  },
+  {
+    "date": "2026-09-19",
+    "median_cpbc": 1006.81,
+    "recos": [
+      {
+        "concept_id": "AUG26-H-012",
+        "layer": "L2",
+        "need": "TRV",
+        "verdict": "KILL",
+        "reason": "efficiency (> 1.0x median Rs1,007)",
+        "cpbc": 1297.94,
+        "bc": 21,
+        "spend": 27256.69,
+        "median_at_time": 1006.81,
+        "top_spender": false,
+        "ad_ids": [
+          "120252025884650343"
+        ],
         "action_taken": null,
         "action_timing": null
       }
