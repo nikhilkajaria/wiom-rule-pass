@@ -150,7 +150,9 @@ def main():
         rdate = datetime.date.fromisoformat(r['date'])
         wk = week_start(rdate)
         by_week[wk]['spend'] += r.get('spend') or 0
-        by_week[wk]['bc'] += r.get('booking_fee_captured') or 0
+        # booking_fee_captured has been dead since 23-Jun; booking_confirmed is the live
+        # metric (caught 2026-09-21 alongside the same bug in mumbai_daily_pass.py).
+        by_week[wk]['bc'] += r.get('booking_confirmed') or 0
 
     this_wk = by_week.get(this_week_start, {'spend': 0.0, 'bc': 0})
     this_cpbl = this_wk['spend'] / this_wk['bc'] if this_wk['bc'] else None
@@ -190,7 +192,7 @@ def main():
         if active is not None and cid not in active:
             continue  # paused/inactive - excluded, not just a low-priority entry
         by_cid[cid]['spend'] += r.get('spend') or 0
-        by_cid[cid]['bc'] += r.get('booking_fee_captured') or 0
+        by_cid[cid]['bc'] += r.get('booking_confirmed') or 0
 
     # No BC-count floor: a low-booking creative with real spend is exactly the
     # case worth surfacing, not hiding. The only split is BC=0 vs BC>=1 (0

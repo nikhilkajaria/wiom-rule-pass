@@ -31,12 +31,24 @@ Downloads/Ajinkya - Mumbai Restart Files - 11 Sep/1 plan/Mumbai ad set - final p
 Zone-level reads (SPL per 1k HH in the 29 supply-fail zones; bookings by CSP supply row) are not
 automatable from the APIs here - they run in-session on day 7 / 14 / 30 (mumbai_zone_read.py).
 
+Creative-level ranking (added 2026-09-21, Nikhil): same advisory design as
+bharat_weekly_pass.py's ranking - not a kill list, own-pool median, live Meta
+active-status vetted, booking-date-keyed (master_export/booking_confirmed, NOT the
+install-cohort funnel_rows used for the tripwires above - the two date keys answer
+different questions; this ranking wants "how has each creative actually converted
+since it started spending", not an install-cohort read that's still maturing).
+Ported once Mumbai had enough real creative-level volume to rank (~10 days live,
+75+ bookings across concepts) - before that a ranking would have been mostly
+BC=0 noise, same reason bharat_weekly_pass.py never floors on a minimum BC count.
+
 Usage: python mumbai_daily_pass.py [--dry-run] [--date YYYY-MM-DD]
 """
 import argparse
+import collections
 import datetime
 import json
 import os
+import statistics
 import urllib.parse
 import urllib.request
 
@@ -48,6 +60,98 @@ LIVE_DATE = datetime.date(2026, 9, 12)
 STATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'mumbai_pass_state.json')
 CPM_TRIP, SPL_WEEK_FLOOR, PASS_FLOOR, RS_PER_REACH, FREQ_CAP, CPI_TARGET, CONN_TARGET = 75.0, 50, 0.70, 0.25, 5.0, 110.0, 35
 MODEL = dict(cpm='50-55', installs_mo=3700, spl_mo=730, bookings_mo=186, conns_mo=43)
+CREATIVE_WINDOW_DAYS = 14  # rolling, same as bharat_weekly_pass.py; floored at LIVE_DATE so it's
+                           # "since live" until the pool actually has 14 days of history
+
+
+def mumbai_active_del():
+    """Same shape as bharat_active_del() / rmkt_weekly_pass.rmkt_active_del(), scoped to
+    MUMBAI_CSP99_SPL. Excludes paused creatives from the ranking rather than just deprioritising
+    them."""
+    tok = os.environ.get('META_ACCESS_TOKEN')
+    if not tok:
+        return None
+    acc = os.environ.get('META_AD_ACCOUNT_ID', rp.META_ACC_DEFAULT)
+    if not str(acc).startswith('act_'):
+        acc = 'act_' + str(acc)
+    ver = os.environ.get('META_API_VERSION', rp.META_VER_DEFAULT)
+    active = set()
+    calls = 0
+    url = f'https://graph.facebook.com/{ver}/{acc}/ads?' + urllib.parse.urlencode(
+        {'fields': 'id,name,effective_status,adset{name}', 'limit': 500, 'access_token': tok})
+    try:
+        while url and calls < 25:
+            with urllib.request.urlopen(url, timeout=90) as r:
+                j = json.loads(r.read().decode())
+            if 'error' in j:
+                print('warn: Meta active-filter unavailable ->', j['error'].get('message'))
+                return None
+            for a in j.get('data', []):
+                if a.get('effective_status') != 'ACTIVE':
+                    continue
+                aset = ((a.get('adset') or {}).get('name') or '').upper()
+                if 'MUMBAI_CSP99' not in aset:
+                    continue
+                m = rp.CONCEPT_RE.search(a.get('name', '') or '')
+                if m:
+                    active.add(m.group(0))
+            calls += 1
+            url = (j.get('paging') or {}).get('next')
+        return active
+    except Exception as e:
+        print('warn: Meta active-filter fetch failed ->', e)
+        return None
+
+
+def creative_ranking_lines(d1):
+    """Bharat-style advisory ranking: booking-date-keyed (master_export), active-status
+    vetted, own-pool median. Returns a list of message lines (possibly empty on failure)."""
+    window_start = max(LIVE_DATE, d1 - datetime.timedelta(days=CREATIVE_WINDOW_DAYS - 1))
+    try:
+        rows = rp.dget('/api/master_export?' + urllib.parse.urlencode(
+            {'start': window_start.isoformat(), 'end': d1.isoformat()}))
+    except Exception as e:
+        print('warn: master_export unavailable for creative ranking ->', e)
+        return []
+    rows = [r for r in rows if r.get('ad_set') == ADSET_NAME and r.get('channel') == 'META']
+    active = mumbai_active_del()
+
+    by_cid = collections.defaultdict(lambda: {'spend': 0.0, 'bc': 0})
+    for r in rows:
+        m = rp.CONCEPT_RE.search(r.get('creative', '') or '')
+        if not m:
+            continue
+        cid = m.group()
+        if active is not None and cid not in active:
+            continue
+        by_cid[cid]['spend'] += r.get('spend') or 0
+        by_cid[cid]['bc'] += r.get('booking_confirmed') or 0
+
+    with_bc = {cid: v for cid, v in by_cid.items() if v['bc'] > 0}
+    zero_bc = {cid: v for cid, v in by_cid.items() if v['bc'] == 0 and v['spend'] > 0}
+    cpbls = {cid: v['spend'] / v['bc'] for cid, v in with_bc.items()}
+    median = statistics.median(cpbls.values()) if cpbls else None
+    ranked = sorted(cpbls.items(), key=lambda kv: kv[1])
+    zero_ranked = sorted(zero_bc.items(), key=lambda kv: kv[1]['spend'], reverse=True)
+
+    lines = ['', f"*Creative ranking, {'since live' if window_start == LIVE_DATE else f'trailing {CREATIVE_WINDOW_DAYS}d'} "
+                 f"({window_start.isoformat()} to {d1.isoformat()}), booking-date basis - advisory, no kill recommendation*"]
+    if active is None:
+        lines.append('_Integrity: live Meta active-status check unavailable this run - list may include paused creatives._')
+    if ranked:
+        lines.append(f"{len(with_bc)}/{len(by_cid)} active creatives have a booking to rank by CPBC (pool median Rs{median:,.0f})")
+        for cid, cpbl in ranked:
+            v = with_bc[cid]
+            tag = ':large_green_circle:' if cpbl <= median * 0.85 else (
+                  ':red_circle:' if cpbl >= median * 1.3 else ':white_circle:')
+            lines.append(f"   {tag} `{cid}` {v['bc']} BC, Rs{v['spend']:,.0f}, CPBC Rs{cpbl:,.0f}")
+    else:
+        lines.append('No creative has a booking yet.')
+    if zero_ranked:
+        lines.append('Zero bookings, real spend - ranked by spend (no CPBC to judge by):')
+        for cid, v in zero_ranked:
+            lines.append(f"   :black_circle: `{cid}` Rs{v['spend']:,.0f}, 0 BC")
+    return lines
 
 
 def meta_get(path, params):
@@ -114,7 +218,8 @@ def main():
     days.sort(key=lambda r: r['date_start'])
     w_since = max(LIVE_DATE, d1 - datetime.timedelta(days=6))
     wk = (meta_get(f'{ADSET_ID}/insights', {'time_range': json.dumps({'since': w_since.isoformat(), 'until': d1.isoformat()}), 'fields': 'spend,impressions,reach,frequency,cpm,actions'}).get('data') or [{}])[0]
-    ads = meta_get(f'{ADSET_ID}/insights', {'level': 'ad', 'time_range': json.dumps({'since': w_since.isoformat(), 'until': d1.isoformat()}), 'fields': 'ad_name,spend,impressions,cpm,actions', 'limit': 50}).get('data', [])
+    # per-ad Meta insights pull removed 2026-09-21 - replaced by creative_ranking_lines()
+    # below, which ranks by CPBC (booking_confirmed) instead of just installs/CPM.
 
     # snapshot learning-stage conversions for the trailing-7d SPL count
     snap = state['snapshots']
@@ -125,16 +230,30 @@ def main():
     b3_key = (d1 - datetime.timedelta(days=3)).isoformat()
     budget_3d = snap.get(b3_key, {}).get('budget')
 
-    # ---- dashboard install-cohort funnel for this ad set (maturing)
+    # ---- dashboard funnel for this ad set. Two different sources on purpose, split
+    # 2026-09-21 (was one funnel_rows pull for everything, which quietly put bookings/
+    # connections on an install-cohort basis - still maturing for anything installed in
+    # the last ~14 days, understating recent performance):
+    #   installs/checks/passed -> funnel_rows (install-cohort; this is the ONLY source
+    #     with serviceable_check/serviceable_true, needed for the T3 pass-rate tripwire)
+    #   bookings/connections   -> master_export (booking-date keyed; same source and
+    #     field rule_pass.py's PBFC/DEL_SCALE kill passes use, and the same one
+    #     creative_ranking_lines() below already uses)
     fun = {'installs': 0, 'checks': 0, 'passed': 0, 'bfc': 0, 'conn': 0, 'rows': 0}
     try:
         rows = rp.dget('/api/funnel_rows?' + urllib.parse.urlencode({'start': LIVE_DATE.isoformat(), 'end': d1.isoformat()}))
         for r in rows if isinstance(rows, list) else []:
             if r.get('ad_set') != ADSET_NAME: continue
             fun['rows'] += 1; fun['installs'] += f(r.get('app_installs')); fun['checks'] += f(r.get('serviceable_check')); fun['passed'] += f(r.get('serviceable_true'))
-            fun['bfc'] += f(r.get('bfc')); fun['conn'] += f(r.get('connection_installed'))
     except Exception as e:
         print('warn: dashboard funnel unavailable ->', e)
+    try:
+        mrows = rp.dget('/api/master_export?' + urllib.parse.urlencode({'start': LIVE_DATE.isoformat(), 'end': d1.isoformat()}))
+        for r in mrows if isinstance(mrows, list) else []:
+            if r.get('ad_set') != ADSET_NAME or r.get('channel') != 'META': continue
+            fun['bfc'] += f(r.get('booking_confirmed')); fun['conn'] += f(r.get('connection_installed'))
+    except Exception as e:
+        print('warn: master_export unavailable for bookings/connections ->', e)
 
     # ---- aggregates
     spend_tot = sum(f(r['spend']) for r in days); impr_tot = sum(f(r['impressions']) for r in days)
@@ -171,7 +290,6 @@ def main():
 
     # ---- message
     d = days[-1] if days else {}
-    ad_lines = sorted(ads, key=lambda a: -f(a['spend']))[:6]
     text = (f"*MUMBAI_CSP99_SPL daily* - {d1:%a %d %b} (day {day_n} since 12 Sep), budget Rs {budget:,.0f}/day\n"
             f"D-1: spend Rs {f(d.get('spend')):,.0f}, CPM Rs {f(d.get('cpm')):.0f}, impr {f(d.get('impressions')):,.0f}, "
             f"installs (Meta) {actions(d, 'mobile_app_install'):.0f}, link clicks {f(d.get('inline_link_clicks')):.0f}\n"
@@ -181,8 +299,8 @@ def main():
             f"checks {fun['checks']:.0f}, pass {('%.0f%%' % (100 * pass_rate)) if pass_rate is not None else 'n/a (<50 checks)'}, "
             f"bookings {fun['bfc']:.0f}, connections {fun['conn']:.0f}, CPI {('Rs %.0f' % cpi) if cpi else 'n/a'} (cohorts mature 14d)\n"
             f"Model at 13k: CPM {MODEL['cpm']}, ~{MODEL['spl_mo'] // 30}/day SPL, ~{MODEL['installs_mo'] // 30}/day installs, ~{MODEL['bookings_mo'] // 30}/day bookings, ~{MODEL['conns_mo']}/mo connections\n"
-            + "\n".join(flags) + "\n"
-            + "Top ads 7d: " + "; ".join(f"{(a['ad_name'] or '').split('_')[0]} Rs {f(a['spend']):,.0f} / CPM {f(a['cpm']):.0f} / inst {actions(a, 'mobile_app_install'):.0f}" for a in ad_lines))
+            + "\n".join(flags)
+            + "\n".join(creative_ranking_lines(d1)))
     print(text)
     if args.dry_run:
         return
