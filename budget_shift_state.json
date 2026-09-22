@@ -1,59 +1,65 @@
 {
   "phase": "shift",
   "shift": {
-    "initiated_date": "2026-09-20",
-    "direction": "GOOGLE_TO_META",
+    "initiated_date": "2026-09-21",
     "step": 1,
-    "meta_allocations": [
+    "source_allocations": [
+      {
+        "name": "GOOGLE_BA_DEL_SCALE_ABO_SEARCH_L2_04072026",
+        "amount": 100.0,
+        "cpbl": 1182.4611532000004,
+        "bc": 5
+      },
+      {
+        "name": "GOOGLE_BA_DEL_SCALE_ABO_SEARCH_BRAND_01072026",
+        "amount": 500.0,
+        "cpbl": 1141.518326625,
+        "bc": 24
+      },
+      {
+        "name": "GOOGLE_BA_DEL_SCALE_ABO_UAC_BFC-VOLUME_010626",
+        "amount": 12600.0,
+        "cpbl": 728.4395850822916,
+        "bc": 960
+      }
+    ],
+    "dest_allocations": [
+      {
+        "name": "GOOGLE_BA_DEL_SCALE_ABO_DEMANDGEN_YT_BFC_VOLUME_10062026",
+        "amount": 1400.0,
+        "cpbl": 332.2187532925532,
+        "bc": 188
+      },
       {
         "name": "BHARAT_ALL_SPL_L1-L2-L3_BROAD_MULTI_APPSTORE_ABO_BFC-VOLUME_MULTI_NA",
-        "amount": 1000.0,
-        "cpbl": 467.83505154639175,
-        "bc": 97
+        "amount": 1200.0,
+        "cpbl": 449.64499999999987,
+        "bc": 102
       },
       {
         "name": "DEL_ALL_BFC_L0-L1-L2_RMKT-VV75-MAST90_BOOKNOW_APPSTORE_ABO_RETARGETING_MULTI_NA",
-        "amount": 4000.0,
-        "cpbl": 496.43513368983963,
+        "amount": 4600.0,
+        "cpbl": 506.2851871657753,
         "bc": 374
       },
       {
         "name": "DEL_SCALE_BFC_L1-L2-L3_BROAD_MULTI_APPSTORE_ABO_BFC-VOLUME_MULTI_NA",
-        "amount": 5100.0,
-        "cpbl": 559.7142473118281,
-        "bc": 372
+        "amount": 5900.0,
+        "cpbl": 536.4810539215687,
+        "bc": 408
       },
       {
-        "name": "DEL_ALL_PBFC_L1-L2-L3_BROAD_MULTI_APPSTORE_ABO_BFC-VOLUME_MULTI_NA",
-        "amount": 4000.0,
-        "cpbl": 633.586848341232,
-        "bc": 422
-      }
-    ],
-    "google_allocations": [
-      {
-        "name": "GOOGLE_BA_DEL_SCALE_ABO_SEARCH_BRAND_01072026",
-        "amount": 600.0,
-        "cpbl": 1257.5103150434784,
-        "bc": 23
-      },
-      {
-        "name": "GOOGLE_BA_DEL_SCALE_ABO_SEARCH_L2_04072026",
+        "name": "GOOGLE_BA_DEL_SCALE_ABO_DEMANDGEN_RMKT_BFC-VOLUME_150926",
         "amount": 100.0,
-        "cpbl": 1197.6113754,
-        "bc": 5
-      },
-      {
-        "name": "GOOGLE_BA_DEL_SCALE_ABO_UAC_BFC-VOLUME_010626",
-        "amount": 13400.0,
-        "cpbl": 757.4972255048648,
-        "bc": 925
+        "cpbl": 549.1248520461538,
+        "bc": 65
       }
     ],
-    "trigger_gap_pct": -29.4,
-    "last_step_date": "2026-09-20",
-    "last_step_time": "2026-09-21T20:35:31.154682+00:00",
-    "next_step_date": "2026-09-21"
+    "blended_cpbl": 618.5,
+    "last_step_date": "2026-09-21",
+    "last_step_time": "2026-09-22T18:53:50.129957+00:00",
+    "next_step_date": "2026-09-22"
   },
-  "stabilization_end": null
+  "stabilization_end": null,
+  "schema": "v2.3"
 }
