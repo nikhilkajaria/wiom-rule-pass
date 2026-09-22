@@ -1,0 +1,33 @@
+name: UAC late-spend check (one-off, through 27-Sep)
+
+# Nikhil asked (2026-09-22) for a daily 11am check on whether Google UAC kept spending past
+# 10pm IST the previous day - a dayparting/ad-schedule concern, not a budget-shift or CPBL read.
+# Time-boxed through Sunday 2026-09-27 per his own instruction; uac_late_spend_check.py itself
+# no-ops past that date, so this workflow can be left as-is, but delete this file and the script
+# once the window has passed and been reviewed, same convention as playstore-ab-check.yml.
+on:
+  schedule:
+    - cron: '30 5 * * *'   # 05:30 UTC = 11:00 IST, daily
+  workflow_dispatch: {}     # lets Nikhil trigger it manually too
+
+jobs:
+  uac-late-spend-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          pip install google-ads google-auth
+      - name: Run the check and post to Slack (DM only)
+        run: python uac_late_spend_check.py
+        env:
+          GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
+          GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}
+          GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}
+          GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}
+          GOOGLE_ADS_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_CUSTOMER_ID }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          # SLACK_DM_USER_ID defaults to U05A9037VFG.
