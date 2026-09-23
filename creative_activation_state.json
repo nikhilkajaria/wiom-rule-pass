@@ -1,5 +1,5 @@
 {
-  "last_checked": "2026-09-21",
+  "last_checked": "2026-09-22",
   "events": {
     "JUN26-C-093": [
       {
@@ -713,6 +713,18 @@
         "date": "2026-09-03",
         "from": "Inactive",
         "to": "Pending process"
+      },
+      {
+        "ts": "2026-09-22T14:20:43",
+        "date": "2026-09-22",
+        "from": "Pending Review",
+        "to": "Active"
+      },
+      {
+        "ts": "2026-09-22T14:18:20",
+        "date": "2026-09-22",
+        "from": "Pending process",
+        "to": "Pending Review"
       }
     ],
     "JUN26-C-091": [
@@ -1661,6 +1673,12 @@
         "date": "2026-07-28",
         "from": "Pending process",
         "to": "Pending Review"
+      },
+      {
+        "ts": "2026-09-21T17:10:46",
+        "date": "2026-09-21",
+        "from": "Inactive",
+        "to": "Deleted"
       }
     ],
     "JUN26-R-052": [
@@ -2295,6 +2313,12 @@
         "date": "2026-06-11",
         "from": "Active",
         "to": "Pending process"
+      },
+      {
+        "ts": "2026-09-22T10:47:42",
+        "date": "2026-09-22",
+        "from": "Inactive",
+        "to": "Deleted"
       }
     ],
     "JUN26-T-064": [
@@ -2861,6 +2885,12 @@
         "date": "2026-07-28",
         "from": "Pending process",
         "to": "Pending Review"
+      },
+      {
+        "ts": "2026-09-21T17:10:46",
+        "date": "2026-09-21",
+        "from": "Inactive",
+        "to": "Deleted"
       }
     ],
     "JUN26-T-009": [
@@ -4985,6 +5015,12 @@
         "date": "2026-09-13",
         "from": "Pending Review",
         "to": "Active"
+      },
+      {
+        "ts": "2026-09-22T10:47:42",
+        "date": "2026-09-22",
+        "from": "Inactive",
+        "to": "Deleted"
       }
     ],
     "JUN26-C-031": [
@@ -5297,6 +5333,12 @@
         "date": "2026-09-19",
         "from": "Pending process",
         "to": "Inactive"
+      },
+      {
+        "ts": "2026-09-22T16:08:17",
+        "date": "2026-09-22",
+        "from": "Active",
+        "to": "Pending process"
       }
     ],
     "JUN26-C-073": [
@@ -5433,6 +5475,12 @@
         "date": "2026-06-11",
         "from": "Pending process",
         "to": "Pending Review"
+      },
+      {
+        "ts": "2026-09-21T17:08:47",
+        "date": "2026-09-21",
+        "from": "Inactive",
+        "to": "Deleted"
       }
     ],
     "JUN26-C-032": [
@@ -5613,6 +5661,12 @@
       {
         "ts": "2026-09-14T13:38:50",
         "date": "2026-09-14",
+        "from": "Inactive",
+        "to": "Deleted"
+      },
+      {
+        "ts": "2026-09-22T10:47:42",
+        "date": "2026-09-22",
         "from": "Inactive",
         "to": "Deleted"
       }
@@ -5943,6 +5997,12 @@
         "date": "2026-09-14",
         "from": "Inactive",
         "to": "Deleted"
+      },
+      {
+        "ts": "2026-09-22T10:47:42",
+        "date": "2026-09-22",
+        "from": "Inactive",
+        "to": "Deleted"
       }
     ],
     "JUN26-R-055": [
@@ -6181,6 +6241,12 @@
         "date": "2026-09-14",
         "from": "Active",
         "to": "Pending process"
+      },
+      {
+        "ts": "2026-09-21T17:08:01",
+        "date": "2026-09-21",
+        "from": "Inactive",
+        "to": "Deleted"
       }
     ],
     "JUN26-T-096": [
@@ -6477,6 +6543,12 @@
         "date": "2026-09-02",
         "from": "Inactive",
         "to": "Deleted"
+      },
+      {
+        "ts": "2026-09-21T17:08:26",
+        "date": "2026-09-21",
+        "from": "Inactive",
+        "to": "Deleted"
       }
     ],
     "JUL26-H-008": [
@@ -6503,6 +6575,12 @@
         "date": "2026-08-10",
         "from": "Active",
         "to": "Pending process"
+      },
+      {
+        "ts": "2026-09-21T17:08:26",
+        "date": "2026-09-21",
+        "from": "Inactive",
+        "to": "Deleted"
       }
     ],
     "JUL26-H-007": [
@@ -7295,6 +7373,18 @@
         "date": "2026-09-17",
         "from": "Pending process",
         "to": "Inactive"
+      },
+      {
+        "ts": "2026-09-22T14:26:33",
+        "date": "2026-09-22",
+        "from": "Pending Review",
+        "to": "Active"
+      },
+      {
+        "ts": "2026-09-22T14:18:24",
+        "date": "2026-09-22",
+        "from": "Pending process",
+        "to": "Pending Review"
       }
     ],
     "AUG26-C-116": [
@@ -7363,6 +7453,12 @@
         "date": "2026-08-25",
         "from": "Pending Review",
         "to": "Pending process"
+      },
+      {
+        "ts": "2026-09-22T14:26:51",
+        "date": "2026-09-22",
+        "from": "Pending Review",
+        "to": "Inactive"
       }
     ],
     "AUG26-R-118": [
@@ -7589,6 +7685,30 @@
         "date": "2026-09-16",
         "from": "Pending process",
         "to": "Pending Review"
+      },
+      {
+        "ts": "2026-09-22T16:07:08",
+        "date": "2026-09-22",
+        "from": "Active",
+        "to": "Pending process"
+      },
+      {
+        "ts": "2026-09-22T14:18:19",
+        "date": "2026-09-22",
+        "from": "Pending process",
+        "to": "Pending Review"
+      },
+      {
+        "ts": "2026-09-21T16:08:23",
+        "date": "2026-09-21",
+        "from": "Pending process",
+        "to": "Inactive"
+      },
+      {
+        "ts": "2026-09-21T16:08:03",
+        "date": "2026-09-21",
+        "from": "Active",
+        "to": "Pending process"
       }
     ],
     "AUG26-T-120": [
@@ -7805,6 +7925,12 @@
         "date": "2026-09-18",
         "from": "Pending Review",
         "to": "Inactive"
+      },
+      {
+        "ts": "2026-09-21T16:02:48",
+        "date": "2026-09-21",
+        "from": "Active",
+        "to": "Pending process"
       }
     ],
     "SEP26-C-123": [
@@ -7917,6 +8043,18 @@
         "date": "2026-09-16",
         "from": "Pending process",
         "to": "Pending Review"
+      },
+      {
+        "ts": "2026-09-21T16:12:59",
+        "date": "2026-09-21",
+        "from": "Pending process",
+        "to": "Inactive"
+      },
+      {
+        "ts": "2026-09-21T16:12:39",
+        "date": "2026-09-21",
+        "from": "Active",
+        "to": "Pending process"
       }
     ],
     "SEP26-C-125": [
@@ -8205,6 +8343,24 @@
         "date": "2026-09-16",
         "from": "Pending process",
         "to": "Pending Review"
+      },
+      {
+        "ts": "2026-09-22T16:06:28",
+        "date": "2026-09-22",
+        "from": "Active",
+        "to": "Pending process"
+      },
+      {
+        "ts": "2026-09-21T16:14:16",
+        "date": "2026-09-21",
+        "from": "Pending process",
+        "to": "Inactive"
+      },
+      {
+        "ts": "2026-09-21T16:13:56",
+        "date": "2026-09-21",
+        "from": "Active",
+        "to": "Pending process"
       }
     ],
     "SEP26-T-132": [
@@ -8231,6 +8387,30 @@
         "date": "2026-09-21",
         "from": "Pending process",
         "to": "Pending Review"
+      },
+      {
+        "ts": "2026-09-22T14:18:20",
+        "date": "2026-09-22",
+        "from": "Pending process",
+        "to": "Pending Review"
+      },
+      {
+        "ts": "2026-09-21T17:58:35",
+        "date": "2026-09-21",
+        "from": "Pending process",
+        "to": "Active"
+      },
+      {
+        "ts": "2026-09-21T17:58:29",
+        "date": "2026-09-21",
+        "from": "Pending Review",
+        "to": "Pending process"
+      },
+      {
+        "ts": "2026-09-21T17:53:00",
+        "date": "2026-09-21",
+        "from": "Pending Review",
+        "to": "Inactive"
       }
     ],
     "SEP26-T-130": [
@@ -8341,6 +8521,18 @@
         "date": "2026-09-21",
         "from": "Pending process",
         "to": "Pending Review"
+      },
+      {
+        "ts": "2026-09-21T16:53:40",
+        "date": "2026-09-21",
+        "from": "Pending process",
+        "to": "Inactive"
+      },
+      {
+        "ts": "2026-09-21T16:53:23",
+        "date": "2026-09-21",
+        "from": "Active",
+        "to": "Pending process"
       }
     ],
     "SEP26-H-014": [
@@ -8387,6 +8579,12 @@
         "date": "2026-09-17",
         "from": "Pending process",
         "to": "Update required"
+      },
+      {
+        "ts": "2026-09-22T14:21:03",
+        "date": "2026-09-22",
+        "from": "Pending Review",
+        "to": "Active"
       }
     ],
     "SEP26-C-134": [
@@ -8413,6 +8611,18 @@
         "date": "2026-09-17",
         "from": "Pending process",
         "to": "Pending Review"
+      },
+      {
+        "ts": "2026-09-22T14:21:07",
+        "date": "2026-09-22",
+        "from": "Pending Review",
+        "to": "Active"
+      },
+      {
+        "ts": "2026-09-22T14:18:22",
+        "date": "2026-09-22",
+        "from": "Pending process",
+        "to": "Pending Review"
       }
     ],
     "SEP26-T-136": [
@@ -8421,6 +8631,84 @@
         "date": "2026-09-21",
         "from": "Pending Review",
         "to": "Active"
+      },
+      {
+        "ts": "2026-09-21T08:12:53",
+        "date": "2026-09-21",
+        "from": "Pending process",
+        "to": "Pending Review"
+      }
+    ],
+    "SEP26-C-139": [
+      {
+        "ts": "2026-09-22T10:51:10",
+        "date": "2026-09-22",
+        "from": "Pending Review",
+        "to": "Active"
+      },
+      {
+        "ts": "2026-09-22T10:45:52",
+        "date": "2026-09-22",
+        "from": "Inactive",
+        "to": "Pending process"
+      },
+      {
+        "ts": "2026-09-22T10:45:40",
+        "date": "2026-09-22",
+        "from": "Pending process",
+        "to": "Active"
+      },
+      {
+        "ts": "2026-09-22T10:41:57",
+        "date": "2026-09-22",
+        "from": "Pending Review",
+        "to": "Inactive"
+      },
+      {
+        "ts": "2026-09-22T10:33:32",
+        "date": "2026-09-22",
+        "from": "Pending process",
+        "to": "Pending Review"
+      }
+    ],
+    "SEP26-C-140": [
+      {
+        "ts": "2026-09-22T10:48:51",
+        "date": "2026-09-22",
+        "from": "Pending process",
+        "to": "Pending Review"
+      },
+      {
+        "ts": "2026-09-22T10:45:45",
+        "date": "2026-09-22",
+        "from": "Pending process",
+        "to": "Active"
+      },
+      {
+        "ts": "2026-09-22T10:45:36",
+        "date": "2026-09-22",
+        "from": "Inactive",
+        "to": "Pending process"
+      },
+      {
+        "ts": "2026-09-22T10:43:27",
+        "date": "2026-09-22",
+        "from": "Pending Review",
+        "to": "Inactive"
+      }
+    ],
+    "SEP26-T-137": [
+      {
+        "ts": "2026-09-21T08:15:36",
+        "date": "2026-09-21",
+        "from": "Pending Review",
+        "to": "Active"
+      },
+      {
+        "ts": "2026-09-21T08:12:49",
+        "date": "2026-09-21",
+        "from": "Pending process",
+        "to": "Pending Review"
       }
     ]
   }

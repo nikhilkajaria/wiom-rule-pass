@@ -1965,7 +1965,7 @@
         "ad_ids": [
           "120251926619590343"
         ],
-        "action_taken": null,
+        "action_taken": "No",
         "action_timing": null
       },
       {
@@ -1978,6 +1978,46 @@
         "bc": 2,
         "spend": 1942.76,
         "median_at_time": 933.99,
+        "top_spender": false,
+        "ad_ids": [
+          "120251926533200343"
+        ],
+        "action_taken": "No",
+        "action_timing": null
+      }
+    ]
+  },
+  {
+    "date": "2026-09-22",
+    "median_cpbc": 870.43,
+    "recos": [
+      {
+        "concept_id": "SEP26-C-124",
+        "layer": "L2",
+        "need": "UCR",
+        "verdict": "KILL",
+        "reason": "efficiency (> 1.0x median Rs870)",
+        "cpbc": 1059.51,
+        "bc": 129,
+        "spend": 136676.23,
+        "median_at_time": 870.43,
+        "top_spender": false,
+        "ad_ids": [
+          "120251926619590343"
+        ],
+        "action_taken": null,
+        "action_timing": null
+      },
+      {
+        "concept_id": "SEP26-T-129",
+        "layer": "L2",
+        "need": "FLEX",
+        "verdict": "KILL",
+        "reason": "aged-out (>7d, 2 BC, > 1.0x median Rs870)",
+        "cpbc": 1034.95,
+        "bc": 2,
+        "spend": 2069.9,
+        "median_at_time": 870.43,
         "top_spender": false,
         "ad_ids": [
           "120251926533200343"
