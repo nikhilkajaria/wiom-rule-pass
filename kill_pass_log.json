@@ -2005,8 +2005,8 @@
         "ad_ids": [
           "120251926619590343"
         ],
-        "action_taken": null,
-        "action_timing": null
+        "action_taken": "Yes",
+        "action_timing": "Late"
       },
       {
         "concept_id": "SEP26-T-129",
@@ -2022,9 +2022,14 @@
         "ad_ids": [
           "120251926533200343"
         ],
-        "action_taken": null,
-        "action_timing": null
+        "action_taken": "Yes",
+        "action_timing": "Late"
       }
     ]
+  },
+  {
+    "date": "2026-09-23",
+    "median_cpbc": 868.34,
+    "recos": []
   }
 ]
