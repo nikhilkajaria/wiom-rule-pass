@@ -2,69 +2,69 @@
   "phase": "shift",
   "shift": {
     "initiated_date": "2026-09-21",
-    "step": 6,
+    "step": 7,
     "source_allocations": [
       {
         "name": "BHARAT_LUCKNOW_SPL_L1-L2-L3_BROAD_BOOKNOW_APPSTORE_ABO_BFC-VOLUME_MULTI_NA",
         "amount": 700.0,
-        "cpbl": Infinity,
-        "bc": 0
+        "cpbl": 7590.890000000001,
+        "bc": 2
       },
       {
         "name": "GOOGLE_BA_DEL_SCALE_ABO_SEARCH_L2_04072026",
         "amount": 100.0,
-        "cpbl": 1447.4974995,
+        "cpbl": 1450.5345457500002,
         "bc": 4
       },
       {
         "name": "GOOGLE_BA_DEL_SCALE_ABO_SEARCH_BRAND_01072026",
         "amount": 500.0,
-        "cpbl": 1094.0545604736842,
-        "bc": 19
+        "cpbl": 1106.7496008333333,
+        "bc": 18
       },
       {
         "name": "DEL_ALL_PBFC_L1-L2-L3_BROAD_MULTI_APPSTORE_ABO_BFC-VOLUME_MULTI_NA",
-        "amount": 5500.0,
-        "cpbl": 665.5499262899264,
-        "bc": 407
+        "amount": 4900.0,
+        "cpbl": 745.1803166226912,
+        "bc": 379
       },
       {
-        "name": "GOOGLE_BA_DEL_SCALE_ABO_UAC_BFC-VOLUME_010626",
-        "amount": 1600.0,
-        "cpbl": 648.0599950714286,
-        "bc": 980
+        "name": "DEL_SCALE_BFC_L1-L2-L3_BROAD_MULTI_APPSTORE_ABO_BFC-VOLUME_MULTI_NA",
+        "amount": 2200.0,
+        "cpbl": 697.4980917874396,
+        "bc": 414
       }
     ],
     "dest_allocations": [
       {
         "name": "GOOGLE_BA_DEL_SCALE_ABO_DEMANDGEN_RMKT_BFC-VOLUME_150926",
         "amount": 800.0,
-        "cpbl": 349.5375394745763,
-        "bc": 118
+        "cpbl": 313.7605756692307,
+        "bc": 130
       },
       {
         "name": "GOOGLE_BA_DEL_SCALE_ABO_DEMANDGEN_YT_BFC_VOLUME_10062026",
         "amount": 1600.0,
-        "cpbl": 377.03022124338634,
-        "bc": 189
+        "cpbl": 375.64229918367346,
+        "bc": 196
       },
       {
         "name": "BHARAT_ALL_SPL_L1-L2-L3_BROAD_MULTI_APPSTORE_ABO_BFC-VOLUME_MULTI_NA",
         "amount": 1200.0,
-        "cpbl": 426.7209923664122,
-        "bc": 131
+        "cpbl": 444.8053731343285,
+        "bc": 134
       },
       {
         "name": "DEL_ALL_BFC_L0-L1-L2_RMKT-VV75-MAST90_BOOKNOW_APPSTORE_ABO_RETARGETING_MULTI_NA",
         "amount": 4800.0,
-        "cpbl": 571.5762857142856,
-        "bc": 385
+        "cpbl": 621.990997229917,
+        "bc": 361
       }
     ],
-    "blended_cpbl": 611.5,
-    "last_step_date": "2026-09-26",
-    "last_step_time": "2026-09-27T19:25:58.429172+00:00",
-    "next_step_date": "2026-09-27"
+    "blended_cpbl": 640.8,
+    "last_step_date": "2026-09-27",
+    "last_step_time": "2026-09-28T22:14:14.625619+00:00",
+    "next_step_date": "2026-09-28"
   },
   "stabilization_end": null,
   "schema": "v2.3"
