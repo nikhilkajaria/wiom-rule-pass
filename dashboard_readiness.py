@@ -38,7 +38,7 @@ import os, json, datetime, urllib.request, urllib.parse
 READINESS_TOLERANCE = 0.90
 DASH_BASE = 'https://growth-portal.up.railway.app'
 META_ACC_DEFAULT = '2007675312900454'
-META_VER_DEFAULT = 'v23.0'
+META_VER_DEFAULT = 'v25.0'
 GOOGLE_CID_DEFAULT = '1218037894'
 
 _DIR = os.path.dirname(os.path.abspath(__file__))

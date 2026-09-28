@@ -253,7 +253,7 @@ not rewritten retroactively.
   from `C:\credentials\.env`). Key endpoints: `/api/decision_layer?camp_set=bfc_volume`
   (budget vs targets + creative perf incl. is_active/status_label/cpbl/bfc/view_rate),
   `/api/war_room`, `/api/raw/day|days`, `/api/master_export`. Full dictionary in ~/.claude/CLAUDE.md.
-- Meta Marketing API: act `2007675312900454`, v23.0, token in `C:\credentials\.env` (or
+- Meta Marketing API: act `2007675312900454`, v25.0, token in `C:\credentials\.env` (or
   meta-ads-dashboard/.env). Used READ-ONLY for active-status + engagement; per ads-api-safety
   ANY write (pause/budget) needs explicit human approval - the pass deliberately never writes.
 - ABO reality: budget is set at ad-set level and Meta distributes across creatives - there is

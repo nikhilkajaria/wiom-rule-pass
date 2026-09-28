@@ -95,7 +95,7 @@ SLACK_CHANNEL_DEFAULT = 'C0C216DU0P6'   # #demand-reports (repointed 2026-09-15,
                                           # takes effect or chat.postMessage fails not_in_channel)
 SLACK_DM_DEFAULT      = 'U05A9037VFG'   # Nikhil
 META_ACC_DEFAULT      = '2007675312900454'
-META_VER_DEFAULT      = 'v23.0'
+META_VER_DEFAULT      = 'v25.0'
 
 # Two Delhi BFC-VOLUME ad sets, judged as separate pools (2026-09-12, Nikhil confirmed):
 # DEL_SCALE_BFC is a deliberate incremental SCALE-zone buy (see
