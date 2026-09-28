@@ -2130,7 +2130,7 @@
         "ad_ids": [
           "120252074177850343"
         ],
-        "action_taken": null,
+        "action_taken": "No",
         "action_timing": null
       },
       {
@@ -2143,6 +2143,46 @@
         "bc": 109,
         "spend": 111609.89,
         "median_at_time": 997.95,
+        "top_spender": false,
+        "ad_ids": [
+          "120251345778270343"
+        ],
+        "action_taken": "No",
+        "action_timing": null
+      }
+    ]
+  },
+  {
+    "date": "2026-09-27",
+    "median_cpbc": 984.23,
+    "recos": [
+      {
+        "concept_id": "SEP26-C-139",
+        "layer": "L2",
+        "need": "UCR",
+        "verdict": "KILL",
+        "reason": "efficiency (> 1.0x median Rs984)",
+        "cpbc": 1152.12,
+        "bc": 13,
+        "spend": 14977.59,
+        "median_at_time": 984.23,
+        "top_spender": false,
+        "ad_ids": [
+          "120252074177850343"
+        ],
+        "action_taken": null,
+        "action_timing": null
+      },
+      {
+        "concept_id": "AUG26-C-114",
+        "layer": "L2",
+        "need": "MCR",
+        "verdict": "KILL",
+        "reason": "efficiency (> 1.0x median Rs984)",
+        "cpbc": 1030.52,
+        "bc": 109,
+        "spend": 112326.69,
+        "median_at_time": 984.23,
         "top_spender": false,
         "ad_ids": [
           "120251345778270343"
