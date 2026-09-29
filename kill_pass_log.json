@@ -2170,8 +2170,8 @@
         "ad_ids": [
           "120252074177850343"
         ],
-        "action_taken": null,
-        "action_timing": null
+        "action_taken": "Yes",
+        "action_timing": "Late"
       },
       {
         "concept_id": "AUG26-C-114",
@@ -2186,6 +2186,29 @@
         "top_spender": false,
         "ad_ids": [
           "120251345778270343"
+        ],
+        "action_taken": "Yes",
+        "action_timing": "Late"
+      }
+    ]
+  },
+  {
+    "date": "2026-09-28",
+    "median_cpbc": 890.99,
+    "recos": [
+      {
+        "concept_id": "AUG26-T-122",
+        "layer": "L2",
+        "need": "FLEX",
+        "verdict": "KILL",
+        "reason": "efficiency (> 1.0x median Rs891)",
+        "cpbc": 993.11,
+        "bc": 134,
+        "spend": 133076.51,
+        "median_at_time": 890.99,
+        "top_spender": false,
+        "ad_ids": [
+          "120251647182940343"
         ],
         "action_taken": null,
         "action_timing": null
