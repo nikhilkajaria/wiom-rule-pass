@@ -1,62 +1,82 @@
 [
- {
-  "date": "2026-08-11",
-  "new_concept_count": 20,
-  "distinct_new_clusters": 9,
-  "stuck_count": 1,
-  "top2_share": 84.4,
-  "concepts_to_80pct": 2,
-  "active_pool_size": 10,
-  "distinct_active_clusters": 7
- },
- {
-  "date": "2026-08-18",
-  "new_concept_count": 20,
-  "distinct_new_clusters": 11,
-  "stuck_count": 2,
-  "top2_share": 70.6,
-  "concepts_to_80pct": 4,
-  "active_pool_size": 11,
-  "distinct_active_clusters": 10
- },
- {
-  "date": "2026-08-25",
-  "new_concept_count": 18,
-  "distinct_new_clusters": 10,
-  "stuck_count": 2,
-  "top2_share": 56.3,
-  "concepts_to_80pct": 4,
-  "active_pool_size": 9,
-  "distinct_active_clusters": 5
- },
- {
-  "date": "2026-09-01",
-  "new_concept_count": 10,
-  "distinct_new_clusters": 7,
-  "stuck_count": 1,
-  "top2_share": 52.4,
-  "concepts_to_80pct": 4,
-  "active_pool_size": 9,
-  "distinct_active_clusters": 5
- },
- {
-  "date": "2026-09-08",
-  "new_concept_count": 8,
-  "distinct_new_clusters": 4,
-  "stuck_count": 1,
-  "top2_share": 48.7,
-  "concepts_to_80pct": 5,
-  "active_pool_size": 12,
-  "distinct_active_clusters": 6
- },
- {
-  "date": "2026-09-22",
-  "new_concept_count": 14,
-  "distinct_new_clusters": 7,
-  "stuck_count": 0,
-  "top2_share": 37.5,
-  "concepts_to_80pct": 6,
-  "active_pool_size": 18,
-  "distinct_active_clusters": 8
- }
+  {
+    "date": "2026-08-11",
+    "new_concept_count": 20,
+    "distinct_new_clusters": 9,
+    "stuck_count": 1,
+    "top2_share": 84.4,
+    "concepts_to_80pct": 2,
+    "active_pool_size": 10,
+    "distinct_active_clusters": 7
+  },
+  {
+    "date": "2026-08-18",
+    "new_concept_count": 20,
+    "distinct_new_clusters": 11,
+    "stuck_count": 2,
+    "top2_share": 70.6,
+    "concepts_to_80pct": 4,
+    "active_pool_size": 11,
+    "distinct_active_clusters": 10
+  },
+  {
+    "date": "2026-08-25",
+    "new_concept_count": 18,
+    "distinct_new_clusters": 10,
+    "stuck_count": 2,
+    "top2_share": 56.3,
+    "concepts_to_80pct": 4,
+    "active_pool_size": 9,
+    "distinct_active_clusters": 5
+  },
+  {
+    "date": "2026-09-01",
+    "new_concept_count": 10,
+    "distinct_new_clusters": 7,
+    "stuck_count": 1,
+    "top2_share": 52.4,
+    "concepts_to_80pct": 4,
+    "active_pool_size": 9,
+    "distinct_active_clusters": 5
+  },
+  {
+    "date": "2026-09-08",
+    "new_concept_count": 8,
+    "distinct_new_clusters": 4,
+    "stuck_count": 1,
+    "top2_share": 48.7,
+    "concepts_to_80pct": 5,
+    "active_pool_size": 12,
+    "distinct_active_clusters": 6
+  },
+  {
+    "date": "2026-09-22",
+    "new_concept_count": 14,
+    "distinct_new_clusters": 7,
+    "stuck_count": 0,
+    "top2_share": 37.5,
+    "concepts_to_80pct": 6,
+    "active_pool_size": 18,
+    "distinct_active_clusters": 8
+  },
+  {
+    "date": "2026-09-29",
+    "new_concept_count": 33,
+    "distinct_new_clusters": 0,
+    "stuck_count": 21,
+    "top2_share": 38.3,
+    "concepts_to_80pct": 9,
+    "active_pool_size": 0,
+    "distinct_active_clusters": 0
+  },
+  {
+    "date": "2026-09-29",
+    "new_concept_count": 33,
+    "distinct_new_clusters": 0,
+    "stuck_count": 21,
+    "top2_share": 38.3,
+    "concepts_to_80pct": 9,
+    "active_pool_size": 0,
+    "distinct_active_clusters": 0
+  }
 ]
