@@ -58,25 +58,5 @@
     "concepts_to_80pct": 6,
     "active_pool_size": 18,
     "distinct_active_clusters": 8
-  },
-  {
-    "date": "2026-09-29",
-    "new_concept_count": 33,
-    "distinct_new_clusters": 0,
-    "stuck_count": 21,
-    "top2_share": 38.3,
-    "concepts_to_80pct": 9,
-    "active_pool_size": 0,
-    "distinct_active_clusters": 0
-  },
-  {
-    "date": "2026-09-29",
-    "new_concept_count": 33,
-    "distinct_new_clusters": 0,
-    "stuck_count": 21,
-    "top2_share": 38.3,
-    "concepts_to_80pct": 9,
-    "active_pool_size": 0,
-    "distinct_active_clusters": 0
   }
 ]
