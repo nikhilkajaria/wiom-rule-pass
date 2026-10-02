@@ -89,6 +89,11 @@
    "conversions": 0,
    "budget": 10000.0,
    "status": "SUCCESS"
+  },
+  "2026-10-01": {
+   "conversions": 0,
+   "budget": 8500.0,
+   "status": "SUCCESS"
   }
  }
 }
