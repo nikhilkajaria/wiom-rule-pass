@@ -2279,8 +2279,8 @@
         "ad_ids": [
           "120252064547450343"
         ],
-        "action_taken": null,
-        "action_timing": null
+        "action_taken": "Yes",
+        "action_timing": "Late"
       },
       {
         "concept_id": "AUG26-T-122",
@@ -2296,9 +2296,14 @@
         "ad_ids": [
           "120251647182940343"
         ],
-        "action_taken": null,
-        "action_timing": null
+        "action_taken": "Yes",
+        "action_timing": "Late"
       }
     ]
+  },
+  {
+    "date": "2026-10-02",
+    "median_cpbc": 1020.79,
+    "recos": []
   }
 ]
