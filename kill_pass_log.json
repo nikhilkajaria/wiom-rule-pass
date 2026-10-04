@@ -2305,5 +2305,45 @@
     "date": "2026-10-02",
     "median_cpbc": 1020.79,
     "recos": []
+  },
+  {
+    "date": "2026-10-03",
+    "median_cpbc": 946.02,
+    "recos": [
+      {
+        "concept_id": "SEP26-C-124",
+        "layer": "L2",
+        "need": "UCR",
+        "verdict": "KILL",
+        "reason": "efficiency (> 1.0x median Rs946)",
+        "cpbc": 1428.91,
+        "bc": 16,
+        "spend": 22862.59,
+        "median_at_time": 946.02,
+        "top_spender": false,
+        "ad_ids": [
+          "120251926619590343"
+        ],
+        "action_taken": null,
+        "action_timing": null
+      },
+      {
+        "concept_id": "JUN26-T-063",
+        "layer": "L2",
+        "need": "MCR",
+        "verdict": "KILL",
+        "reason": "efficiency (> 1.0x median Rs946)",
+        "cpbc": 1103.92,
+        "bc": 871,
+        "spend": 961515.21,
+        "median_at_time": 946.02,
+        "top_spender": false,
+        "ad_ids": [
+          "120250387732040343"
+        ],
+        "action_taken": null,
+        "action_timing": null
+      }
+    ]
   }
 ]
