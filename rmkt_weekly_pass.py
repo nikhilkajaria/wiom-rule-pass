@@ -96,7 +96,12 @@ def rmkt_compute(d1, last_activation=None):
         g = rp.geo_of(r.get('ad_set', '')) or rp.geo_of(r.get('campaign', '')) or 'Other'
         dt = str(r.get('date', ''))
         sp = r.get('spend') or 0
-        bf = r.get('booking_confirmed') or 0
+        # v2.13 (2026-10-05): RETARGETING reads booking_fee_captured, not booking_confirmed. In master_export,
+        # booking_confirmed is credited through the user's install attribution, so it misses most bookings by
+        # re-engaged existing installers - the whole point of retargeting. 25 Sep-4 Oct RMKT: 758 fees vs 465
+        # confirmed overall; SEP26-T-143 111 vs 7, which fired a false cost-velocity brake (CPBC Rs5,990 on
+        # confirmed vs Rs378 on fees). Prospecting (rule_pass.py) keeps booking_confirmed: there the two match.
+        bf = r.get('booking_fee_captured') or 0
         ins = r.get('app_installs') or 0
         raw[g][cid].append((dt, sp, bf, ins, rp.layer_of(nm), rp.need_of(nm)))
 
