@@ -2364,9 +2364,14 @@
         "ad_ids": [
           "120250387732040343"
         ],
-        "action_taken": null,
+        "action_taken": "No",
         "action_timing": null
       }
     ]
+  },
+  {
+    "date": "2026-10-05",
+    "median_cpbc": 1100.47,
+    "recos": []
   }
 ]
