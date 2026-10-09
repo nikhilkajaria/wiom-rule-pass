@@ -2397,8 +2397,8 @@
         "ad_ids": [
           "120252171587290343"
         ],
-        "action_taken": null,
-        "action_timing": null
+        "action_taken": "Yes",
+        "action_timing": "Late"
       },
       {
         "concept_id": "SEP26-T-136",
@@ -2414,8 +2414,8 @@
         "ad_ids": [
           "120252172988470343"
         ],
-        "action_taken": null,
-        "action_timing": null
+        "action_taken": "Yes",
+        "action_timing": "Late"
       },
       {
         "concept_id": "SEP26-C-150",
@@ -2431,9 +2431,14 @@
         "ad_ids": [
           "120252182272090343"
         ],
-        "action_taken": null,
-        "action_timing": null
+        "action_taken": "Yes",
+        "action_timing": "Late"
       }
     ]
+  },
+  {
+    "date": "2026-10-08",
+    "median_cpbc": 1068.1,
+    "recos": []
   }
 ]
