@@ -64,6 +64,12 @@ CREATIVE_WINDOW_DAYS = 14  # rolling, same as bharat_weekly_pass.py; floored at 
                            # "since live" until the pool actually has 14 days of history
 
 
+
+def _meta_req(url):
+    """Meta Graph request with the token in the Authorization header, never in the URL or its paging links
+    (rules/ads-api-safety.md; 2026-10-10)."""
+    return urllib.request.Request(url, headers={'Authorization': 'Bearer ' + os.environ.get('META_ACCESS_TOKEN', '')})
+
 def mumbai_active_del():
     """Same shape as bharat_active_del() / rmkt_weekly_pass.rmkt_active_del(), scoped to
     MUMBAI_CSP99_SPL. Excludes paused creatives from the ranking rather than just deprioritising
@@ -78,10 +84,10 @@ def mumbai_active_del():
     active = set()
     calls = 0
     url = f'https://graph.facebook.com/{ver}/{acc}/ads?' + urllib.parse.urlencode(
-        {'fields': 'id,name,effective_status,adset{name}', 'limit': 500, 'access_token': tok})
+        {'fields': 'id,name,effective_status,adset{name}', 'limit': 500})
     try:
         while url and calls < 25:
-            with urllib.request.urlopen(url, timeout=90) as r:
+            with urllib.request.urlopen(_meta_req(url), timeout=90) as r:
                 j = json.loads(r.read().decode())
             if 'error' in j:
                 print('warn: Meta active-filter unavailable ->', j['error'].get('message'))
@@ -157,9 +163,9 @@ def creative_ranking_lines(d1):
 def meta_get(path, params):
     tok = os.environ['META_ACCESS_TOKEN']
     ver = os.environ.get('META_API_VERSION', rp.META_VER_DEFAULT)
-    p = dict(params); p['access_token'] = tok
+    p = dict(params)
     url = f'https://graph.facebook.com/{ver}/{path}?' + urllib.parse.urlencode(p)
-    with urllib.request.urlopen(url, timeout=120) as r:
+    with urllib.request.urlopen(_meta_req(url), timeout=120) as r:
         return json.loads(r.read().decode())
 
 

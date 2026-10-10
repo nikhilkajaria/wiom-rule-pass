@@ -44,6 +44,12 @@ GOOGLE_CID_DEFAULT = '1218037894'
 _DIR = os.path.dirname(os.path.abspath(__file__))
 
 
+
+def _meta_req(url):
+    """Meta Graph request with the token in the Authorization header, never in the URL or its paging links
+    (rules/ads-api-safety.md; 2026-10-10)."""
+    return urllib.request.Request(url, headers={'Authorization': 'Bearer ' + os.environ.get('META_ACCESS_TOKEN', '')})
+
 def load_env():
     path = r'C:\credentials\.env'
     if os.path.exists(path):
@@ -95,10 +101,9 @@ def get_actual_meta_spend_day(d1):
         'level': 'account',
         'time_range': json.dumps({'since': d1.isoformat(), 'until': d1.isoformat()}),
         'fields': 'spend',
-        'access_token': tok,
     }
     url = f'https://graph.facebook.com/{ver}/{acc}/insights?' + urllib.parse.urlencode(params)
-    with urllib.request.urlopen(url, timeout=60) as r:
+    with urllib.request.urlopen(_meta_req(url), timeout=60) as r:
         resp = json.loads(r.read().decode())
     rows = resp.get('data', [])
     return float(rows[0].get('spend') or 0) if rows else 0.0

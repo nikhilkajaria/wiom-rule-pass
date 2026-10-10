@@ -36,6 +36,8 @@ import statistics
 import urllib.parse
 
 import rule_pass as rp
+import os
+import urllib.request
 
 BHARAT_ADSET = "BHARAT_ALL_SPL_L1-L2-L3_BROAD_MULTI_APPSTORE_ABO_BFC-VOLUME_MULTI_NA"
 TRAILING_WEEKS = 8              # weeks of history behind this week, for the geo self-benchmark
@@ -47,6 +49,12 @@ CREATIVE_WINDOW_DAYS = 14       # trailing window for the creative-level ranking
                                  # calendar-anchoring trap, and a rolling window can't do that.
 SCALE_BAND = 0.15               # within +/-15% of trailing median = HOLD; better = SCALE; worse = WATCH
 
+
+
+def _meta_req(url):
+    """Meta Graph request with the token in the Authorization header, never in the URL or its paging links
+    (rules/ads-api-safety.md; 2026-10-10)."""
+    return urllib.request.Request(url, headers={'Authorization': 'Bearer ' + os.environ.get('META_ACCESS_TOKEN', '')})
 
 def pull_bharat_rows(d1):
     start = (d1 - datetime.timedelta(weeks=TRAILING_WEEKS + 1)).isoformat()
@@ -74,10 +82,10 @@ def bharat_active_del():
     active = set()
     calls = 0
     url = f'https://graph.facebook.com/{ver}/{acc}/ads?' + urllib.parse.urlencode(
-        {'fields': 'id,name,effective_status,adset{name}', 'limit': 500, 'access_token': tok})
+        {'fields': 'id,name,effective_status,adset{name}', 'limit': 500})
     try:
         while url and calls < 25:
-            with urllib.request.urlopen(url, timeout=90) as r:
+            with urllib.request.urlopen(_meta_req(url), timeout=90) as r:
                 j = json.loads(r.read().decode())
             if 'error' in j:
                 print('warn: Meta active-filter unavailable ->', j['error'].get('message'))

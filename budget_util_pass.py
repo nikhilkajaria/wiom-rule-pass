@@ -83,6 +83,12 @@ MANUAL_CHANGES_PATH = os.path.join(_DIR, 'manual_budget_changes.csv')
 
 # ---- historical budget reconstruction (manually logged - see module docstring) ----
 
+
+def _meta_req(url):
+    """Meta Graph request with the token in the Authorization header, never in the URL or its paging links
+    (rules/ads-api-safety.md; 2026-10-10)."""
+    return urllib.request.Request(url, headers={'Authorization': 'Bearer ' + os.environ.get('META_ACCESS_TOKEN', '')})
+
 def load_manual_changes():
     if not os.path.exists(MANUAL_CHANGES_PATH):
         return []
@@ -122,12 +128,11 @@ def get_meta_activity_budget_changes(meta_budgets, lookback_days=3):
     params = {
         'since': since, 'until': until, 'limit': 200,
         'fields': 'event_type,event_time,object_name,extra_data',
-        'access_token': tok,
     }
     url = f'https://graph.facebook.com/{ver}/{acc}/activities?' + urllib.parse.urlencode(params)
     changes = []
     while url:
-        with urllib.request.urlopen(url, timeout=60) as r:
+        with urllib.request.urlopen(_meta_req(url), timeout=60) as r:
             resp = json.loads(r.read().decode())
         for a in resp.get('data', []):
             if a.get('event_type') != 'update_ad_set_budget':
@@ -218,11 +223,10 @@ def get_meta_spend_window(d1, lookback=LOOKBACK_DAYS):
         'time_range': json.dumps({'since': start, 'until': today_iso}),
         'fields': 'adset_name,ad_name,spend,date_start',
         'limit': 500,
-        'access_token': tok,
     }
     url = f'https://graph.facebook.com/{ver}/{acc}/insights?' + urllib.parse.urlencode(params)
     while url:
-        with urllib.request.urlopen(url, timeout=60) as r:
+        with urllib.request.urlopen(_meta_req(url), timeout=60) as r:
             resp = json.loads(r.read().decode())
         for row in resp.get('data', []):
             aset = row.get('adset_name')

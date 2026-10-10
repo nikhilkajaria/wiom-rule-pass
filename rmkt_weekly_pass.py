@@ -20,9 +20,17 @@ import datetime
 import sys
 
 import rule_pass as rp
+import os
+import urllib.request
 
 RMKT_ADSET = "DEL_ALL_BFC_L0-L1-L2_RMKT-VV75-MAST90_BOOKNOW_APPSTORE_ABO_RETARGETING_MULTI_NA"
 
+
+
+def _meta_req(url):
+    """Meta Graph request with the token in the Authorization header, never in the URL or its paging links
+    (rules/ads-api-safety.md; 2026-10-10)."""
+    return urllib.request.Request(url, headers={'Authorization': 'Bearer ' + os.environ.get('META_ACCESS_TOKEN', '')})
 
 def rmkt_active_del():
     """Same shape as rule_pass.meta_active_del(), scoped to RETARGETING instead of BFC-VOLUME."""
@@ -43,10 +51,10 @@ def rmkt_active_del():
     ad_ids_map = collections.defaultdict(list)
     calls = 0
     url = f'https://graph.facebook.com/{ver}/{acc}/ads?' + urllib.parse.urlencode(
-        {'fields': 'id,name,effective_status,adset{name},campaign{name}', 'limit': 500, 'access_token': tok})
+        {'fields': 'id,name,effective_status,adset{name},campaign{name}', 'limit': 500})
     try:
         while url and calls < 25:
-            with urllib.request.urlopen(url, timeout=90) as r:
+            with urllib.request.urlopen(_meta_req(url), timeout=90) as r:
                 j = json.loads(r.read().decode())
             if 'error' in j:
                 print('warn: Meta active-filter unavailable ->', j['error'].get('message'))

@@ -109,6 +109,11 @@ META_VER_DEFAULT      = 'v25.0'
 # active duplicate of the same creative running in DEL_SCALE_BFC.
 DEL_ALL_PBFC_ADSET    = 'DEL_ALL_PBFC_L1-L2-L3_BROAD_MULTI_APPSTORE_ABO_BFC-VOLUME_MULTI_NA'
 DEL_SCALE_BFC_ADSET   = 'DEL_SCALE_BFC_L1-L2-L3_BROAD_MULTI_APPSTORE_ABO_BFC-VOLUME_MULTI_NA'
+# v2.13 (2026-10-10, Nikhil): DEL_ALL_PBFC was PAUSED 10-Oct 23:41 IST (registry D0372; its Rs 28,100 moved to
+# DEL_SCALE / RMKT / DG YT / UAC). DEL_SCALE_BFC is now the PRIMARY Delhi pool: its decisions get the kill log,
+# retro 'not acted' check, Recos sheet, action-log CSV, live same-day top-spender deferral, C* and maturity DMs and
+# the weekly review. The PBFC pool is judged and posted ONLY while it has live ACTIVE BOOKNOW ads, so its Slack
+# messages stop while it is paused and come back by themselves if it is ever re-enabled.
 
 # ---- logging constants ----
 LOG_PATH        = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'kill_pass_log.json')
@@ -162,6 +167,12 @@ def _load_activation_overrides():
         except Exception:
             pass
     return {}
+
+
+def _meta_req(url):
+    """Meta Graph request with the token in the Authorization header, never in the URL or its paging links
+    (rules/ads-api-safety.md; 2026-10-10)."""
+    return urllib.request.Request(url, headers={'Authorization': 'Bearer ' + os.environ.get('META_ACCESS_TOKEN', '')})
 
 
 def load_env():
@@ -219,10 +230,10 @@ def meta_active_del():
     ad_ids_map = collections.defaultdict(list)
     calls = 0
     url = f'https://graph.facebook.com/{ver}/{acc}/ads?' + urllib.parse.urlencode(
-        {'fields': 'id,name,effective_status,adset{name},campaign{name}', 'limit': 500, 'access_token': tok})
+        {'fields': 'id,name,effective_status,adset{name},campaign{name}', 'limit': 500})
     try:
         while url and calls < 25:
-            with urllib.request.urlopen(url, timeout=90) as r:
+            with urllib.request.urlopen(_meta_req(url), timeout=90) as r:
                 j = json.loads(r.read().decode())
             if 'error' in j:
                 print('warn: Meta active-filter unavailable ->', j['error'].get('message')); return None, {}
@@ -268,10 +279,10 @@ def meta_active_by_adset(adset_names):
     out = {n: (set(), collections.defaultdict(list)) for n in adset_names}
     calls = 0
     url = f'https://graph.facebook.com/{ver}/{acc}/ads?' + urllib.parse.urlencode(
-        {'fields': 'id,name,effective_status,adset{name},campaign{name}', 'limit': 500, 'access_token': tok})
+        {'fields': 'id,name,effective_status,adset{name},campaign{name}', 'limit': 500})
     try:
         while url and calls < 25:
-            with urllib.request.urlopen(url, timeout=90) as r:
+            with urllib.request.urlopen(_meta_req(url), timeout=90) as r:
                 j = json.loads(r.read().decode())
             if 'error' in j:
                 print('warn: Meta active-filter unavailable ->', j['error'].get('message'))
@@ -321,11 +332,11 @@ def meta_today_spend(ad_ids_map, today_date):
     url = f'https://graph.facebook.com/{ver}/{acc}/insights?' + urllib.parse.urlencode({
         'level': 'ad', 'fields': 'ad_id,spend',
         'time_range': json.dumps({'since': today_date.isoformat(), 'until': today_date.isoformat()}),
-        'limit': 500, 'access_token': tok})
+        'limit': 500})
     calls = 0
     try:
         while url and calls < 10:
-            with urllib.request.urlopen(url, timeout=60) as r:
+            with urllib.request.urlopen(_meta_req(url), timeout=60) as r:
                 j = json.loads(r.read().decode())
             if 'error' in j:
                 print('warn: live-spend check unavailable ->', j['error'].get('message')); return {}
@@ -350,10 +361,9 @@ def meta_ad_status_check(ad_ids, reco_date_str, ver, tok):
     reco_date = datetime.date.fromisoformat(reco_date_str)
     for ad_id in ad_ids:
         url = (f'https://graph.facebook.com/{ver}/{ad_id}?'
-               f'fields=configured_status,effective_status,updated_time'
-               f'&access_token={tok}')
+               f'fields=configured_status,effective_status,updated_time')
         try:
-            with urllib.request.urlopen(url, timeout=30) as r:
+            with urllib.request.urlopen(_meta_req(url), timeout=30) as r:
                 a = json.loads(r.read().decode())
             if a.get('configured_status') == 'PAUSED':
                 ut = a.get('updated_time', '')
@@ -657,13 +667,12 @@ def _fetch_activity_events(since, until):
     params = {
         'since': since, 'until': until, 'limit': 100,
         'fields': 'event_type,event_time,object_name,extra_data',
-        'access_token': tok,
     }
     url = f'https://graph.facebook.com/{ver}/{acc}/activities?' + urllib.parse.urlencode(params)
     pages = 0
     try:
         while url and pages < 30:
-            with urllib.request.urlopen(url, timeout=60) as r:
+            with urllib.request.urlopen(_meta_req(url), timeout=60) as r:
                 j = json.loads(r.read().decode())
             if 'error' in j:
                 print('warn: activity log unavailable ->', j['error'].get('message'))
@@ -1069,16 +1078,21 @@ def decide(data, age, cstar, active, funnel_geo=None, variant='lifetime', pool_k
             if len(keep) < POOL_CAP: keep.add(c)
         res['prune_cut'] = sorted([c for c in survivors if c not in keep], key=lambda c: pool[c]['w7s'])
     # ---- weekly: geo budget (mature geo, 7-day cpbc vs C*) ----
+    # v2.13 (2026-10-10): city-level views read Delhi as data['Delhi'] + data['Delhi_Scale'] (all Delhi BFC-VOLUME
+    # BOOKNOW). Before, 'Delhi' meant DEL_ALL_PBFC only, which went to zero spend after its 10-Oct pause.
+    def _city_recs(g):
+        return [x for k in ((g, 'Delhi_Scale') if g == 'Delhi' else (g,)) for x in data.get(k, {}).values()]
     if cstar:
         for g in MATURE_GEOS:
-            wc = data.get(g, {})
-            gsp7 = sum(x['w7s'] for x in wc.values()); gbc7 = sum(x.get('w7b', 0) for x in wc.values())
+            wc = _city_recs(g)
+            gsp7 = sum(x['w7s'] for x in wc); gbc7 = sum(x.get('w7b', 0) for x in wc)
             if gbc7 >= GEO_BUDGET_BC_GATE:
                 gcp = gsp7 / gbc7
                 res['geo_budget'].append((g, 'SCALE' if gcp <= cstar else 'HOLD', gcp, gbc7))
     # ---- weekly: non-Delhi geo 3-stage diagnostic (7-day spend gate) ----
     fg = funnel_geo or {}
-    del_fg = fg.get('Delhi', {}); del_w7s = sum(x['w7s'] for x in data.get('Delhi', {}).values())
+    del_fg = {k: fg.get('Delhi', {}).get(k, 0) + fg.get('Delhi_Scale', {}).get(k, 0) for k in ('svc_check', 'svc_true', 'bc')}
+    del_w7s = sum(x['w7s'] for x in _city_recs('Delhi'))
     del_svc_check = del_fg.get('svc_check', 0); del_svc_true = del_fg.get('svc_true', 0); del_bc = del_fg.get('bc', 0)
     del_cpsc  = (del_w7s / del_svc_check) if del_svc_check else None
     del_svc_rate  = (del_svc_true / del_svc_check) if del_svc_check else None
@@ -1225,10 +1239,9 @@ def meta_adset_learning_stage(adset_name):
     url = f'https://graph.facebook.com/{ver}/{acc}/adsets?' + urllib.parse.urlencode({
         'fields': 'learning_stage_info',
         'filtering': json.dumps([{'field': 'name', 'operator': 'EQUAL', 'value': adset_name}]),
-        'access_token': tok,
     })
     try:
-        with urllib.request.urlopen(url, timeout=60) as r:
+        with urllib.request.urlopen(_meta_req(url), timeout=60) as r:
             j = json.loads(r.read().decode())
         rows = j.get('data', [])
         if not rows: return None
@@ -1294,7 +1307,7 @@ def build_scale_advisory_msg(data, active, end):
     return "\n".join(lines)
 
 
-def build_cstar_tracking_msg(data, active, cstar, end):
+def build_cstar_tracking_msg(data, active, cstar, end, pool_key='Delhi', label='DEL BOOKNOW'):
     """Phase 1 of the C*-anchoring proposal (2026-09-05, Nikhil): pure observation,
     zero effect on any kill/review/prune decision. Reports every active creative's
     lifetime and L7-day CPBC as a ratio to C* (the actual blended business target),
@@ -1306,7 +1319,7 @@ def build_cstar_tracking_msg(data, active, cstar, end):
     an overnight switch to a raw C* line would flag ~9 of 10 active creatives at
     once given today's pool). DM-only, always - never posted to #demand-reports,
     independent of --dm-only (which only controls the main kill+prune message)."""
-    pool = data.get('Delhi', {})
+    pool = data.get(pool_key, {})
     if not cstar:
         return None
     rows = []
@@ -1319,7 +1332,7 @@ def build_cstar_tracking_msg(data, active, cstar, end):
     if not rows:
         return None
     rows.sort(key=lambda r: (r[4] if r[4] != float('inf') else float('inf')))
-    lines = [f":bar_chart: *C\\* tracking* ({end}, DEL BOOKNOW BFC-VOLUME) - _observation only, not wired into any kill decision_",
+    lines = [f":bar_chart: *C\\* tracking* ({end}, {label} BFC-VOLUME) - _observation only, not wired into any kill decision_",
              f"C* (blended target) Rs{cstar:,.0f}", ""]
     for cid, bc, w7b, lifetime, l7 in rows:
         life_s = f"Rs{lifetime:,.0f}" if lifetime != float('inf') else 'inf'
@@ -1356,7 +1369,7 @@ def maturity_fraction(age_days):
     return 1.0
 
 
-def build_maturity_tracking_msg(data, age, active, end):
+def build_maturity_tracking_msg(data, age, active, end, pool_key='Delhi', label='DEL BOOKNOW'):
     """Phase 1 of the maturity-adjustment proposal (2026-09-05, Nikhil): pure
     observation, zero effect on any kill/review/prune decision - same treatment as
     build_cstar_tracking_msg, and answering a different question (how accurately CPBC
@@ -1367,12 +1380,12 @@ def build_maturity_tracking_msg(data, age, active, end):
     lifetime projection and a fixed average-age constant for the L7 projection, not a
     full per-spend-day correction (that refinement matters once/if this is ever wired
     into a real decision - not needed for observation). DM-only, always."""
-    pool = data.get('Delhi', {})
+    pool = data.get(pool_key, {})
     rows = []
     for cid, rec in pool.items():
         if active is not None and cid not in active: continue
         if rec['spend'] <= 0: continue
-        a = age.get(('Delhi', cid), 999)
+        a = age.get((pool_key, cid), 999)
         lifetime_raw = cpbc(rec)
         l7_raw = cpbc_l7(rec)
         mf = maturity_fraction(a)
@@ -1386,7 +1399,7 @@ def build_maturity_tracking_msg(data, age, active, end):
         return None
     rows.sort(key=lambda r: r[1])  # youngest first - correction matters most there
     def fmt(v): return f"Rs{v:,.0f}" if v != float('inf') else 'inf'
-    lines = [f":microscope: *Maturity-adjustment tracking* ({end}, DEL BOOKNOW BFC-VOLUME) - "
+    lines = [f":microscope: *Maturity-adjustment tracking* ({end}, {label} BFC-VOLUME) - "
              f"_observation only, not wired into any kill decision_", ""]
     for cid, a, bc, life_raw, life_proj, w7b, l7_raw, l7_proj in rows:
         lines.append(f"   `{cid}` age {a}d, {bc} BC  |  lifetime raw {fmt(life_raw)} -> proj {fmt(life_proj)}"
@@ -1394,12 +1407,12 @@ def build_maturity_tracking_msg(data, age, active, end):
     return "\n".join(lines)
 
 
-def msg_weekly(res, cstar, start, end):
+def msg_weekly(res, cstar, start, end, label='DEL BOOKNOW'):
     isos = res['isolates']
     integ = integrity_line(res)
     if not isos and not res['geo_budget'] and not res['geo_conv']:
-        return f":memo: BFC-VOLUME weekly review ({start} to {end}): no isolate/geo actions.\n{integ}"
-    lines = [f":memo: *BFC-VOLUME weekly review* ({start} to {end}, DEL BOOKNOW, 7-day)",
+        return f":memo: {label} - BFC-VOLUME weekly review ({start} to {end}): no isolate/geo actions.\n{integ}"
+    lines = [f":memo: *{label} - BFC-VOLUME weekly review* ({start} to {end}, 7-day)",
              "_Scale/isolate + structural geo layer. Daily handles kills/brake/prune._", integ, ""]
     if isos:
         lines.append(f"*ISOLATE candidates* (<=0.7x median, >=12 BC -> own ad set) ({len(isos)})")
@@ -1503,14 +1516,17 @@ def main():
 
     start = (d1 - datetime.timedelta(days=WINDOW_DAYS - 1)).isoformat(); end = d1.isoformat()
     active_by_adset = meta_active_by_adset({DEL_ALL_PBFC_ADSET, DEL_SCALE_BFC_ADSET})
-    active, ad_ids_map = active_by_adset[DEL_ALL_PBFC_ADSET]
-    active_scale, ad_ids_map_scale = active_by_adset[DEL_SCALE_BFC_ADSET]
+    # v2.13 (2026-10-10): DEL_SCALE_BFC is the primary pool (see DEL_ALL_PBFC_ADSET note). `active` /
+    # `ad_ids_map` / `res` below now mean DEL_SCALE; PBFC is judged further down only if it has live ads.
+    active, ad_ids_map = active_by_adset[DEL_SCALE_BFC_ADSET]
+    active_pbfc, ad_ids_map_pbfc = active_by_adset[DEL_ALL_PBFC_ADSET]
+    pbfc_live = bool(active_pbfc)   # empty set = paused, None = Meta unreachable: either way no PBFC post
     # union covers reactivation-window handling for concepts active in either pool - see
     # compute()'s window_start logic, keyed by concept id only, not pool-specific
-    activation_lookup_set = (active or set()) | (active_scale or set()) if (active is not None or active_scale is not None) else None
+    activation_lookup_set = (active or set()) | (active_pbfc or set()) if (active is not None or active_pbfc is not None) else None
     last_activation = get_last_activation_dates(d1, activation_lookup_set)
     data, age, cstar, funnel_geo = compute(d1, last_activation)
-    res = decide(data, age, cstar, active, funnel_geo=funnel_geo, pool_key='Delhi')
+    res = decide(data, age, cstar, active, funnel_geo=funnel_geo, pool_key='Delhi_Scale')
 
     # Live same-day spend cross-check (2026-08-17, Nikhil) - see meta_today_spend()
     # docstring. Same treatment as trailing-7d top-spender: pull the concept out of KILL
@@ -1558,38 +1574,25 @@ def main():
         log = load_log()
         unacted = retro_check(load_log(), d1, still_flagged_today=still_flagged_today)  # read-only check for display
 
-    msg = msg_daily(res, cstar, end, unacted=unacted) if args.mode == 'daily' else msg_weekly(res, cstar, start, end)
+    msg = (msg_daily(res, cstar, end, unacted=unacted, label='DEL SCALE BOOKNOW') if args.mode == 'daily'
+           else msg_weekly(res, cstar, start, end, label='DEL SCALE BOOKNOW'))
     if args.dry_run or args.no_post: print(msg)
     else: slack_post(msg, dm_only=args.dm_only)
 
-    if args.mode == 'daily':
-        # DEL_SCALE_BFC: promoted to real KILL/MONITOR authority (v2.11, 2026-09-15, Nikhil) -
-        # exited Meta learning (learning_stage_info.status=SUCCESS, confirmed live) with real
-        # trailing volume (101 BC over the last 7 days, same order of magnitude as DEL_ALL_PBFC
-        # itself). build_scale_advisory_msg()'s pure-observation framing from 2026-09-12 is
-        # retired (left defined, not deleted, in case this needs to roll back fast) - this pool
-        # is no longer "still ramping" by the numbers. Kept deliberately conservative
-        # (daily_kill_cap=1 vs the normal 3) for its first week off learning; that week passed
-        # with no issues (2026-09-17, Nikhil, after a live case where the only "why wasn't X
-        # killed" answer turned out to be X already being paused, not a cap/logic problem) -
-        # aligned to the same DAILY_KILL_CAP default DEL_ALL_PBFC uses, by omitting the
-        # override entirely rather than hardcoding 3, so the two pools stay in sync
-        # automatically if DAILY_KILL_CAP itself ever changes.
-        res_scale = decide(data, age, cstar, active_scale, funnel_geo=funnel_geo, pool_key='Delhi_Scale')
-        scale_msg = msg_daily(res_scale, cstar, end, label='DEL SCALE BOOKNOW')
-        if args.dry_run or args.no_post: print("\n" + scale_msg)
-        else: slack_post(scale_msg, dm_only=False)
+    if args.mode == 'daily' and pbfc_live:
+        # DEL_ALL_PBFC as a secondary, report-only pool (v2.13, 2026-10-10): posted only while it has live ACTIVE
+        # BOOKNOW ads. Paused 10-Oct 23:41 IST, so this stays silent until/unless it is re-enabled. Its kills are
+        # not logged (the kill log / retro check / Recos sheet follow the primary DEL_SCALE pool).
+        # History: DEL_SCALE was the secondary pool here from 2026-09-12 (advisory) and 2026-09-15 (v2.11, real
+        # KILL/MONITOR authority, DAILY_KILL_CAP default) until v2.13 swapped the roles.
+        res_pbfc = decide(data, age, cstar, active_pbfc, funnel_geo=funnel_geo, pool_key='Delhi')
+        pbfc_msg = msg_daily(res_pbfc, cstar, end, label='DEL PBFC BOOKNOW')
+        if args.dry_run or args.no_post: print("\n" + pbfc_msg)
+        else: slack_post(pbfc_msg, dm_only=False)
 
-    if args.mode == 'daily':
-        cstar_msg = build_cstar_tracking_msg(data, active, cstar, end)
-        if cstar_msg:
-            if args.dry_run or args.no_post: print("\n" + cstar_msg)
-            else: slack_post(cstar_msg, dm_only=True)  # always DM-only, independent of --dm-only
-
-        maturity_msg = build_maturity_tracking_msg(data, age, active, end)
-        if maturity_msg:
-            if args.dry_run or args.no_post: print("\n" + maturity_msg)
-            else: slack_post(maturity_msg, dm_only=True)  # always DM-only, independent of --dm-only
+    # C* tracking and maturity-adjustment tracking DMs: RETIRED 2026-10-11 (Nikhil: "remove the C* tracking and
+    # maturity adjustment tracking message from Slack"). Both were observation-only since 2026-09-05; the builders
+    # (build_cstar_tracking_msg / build_maturity_tracking_msg) stay defined for ad-hoc use, nothing posts them.
 
     if not args.dry_run and not args.date:
         from dashboard_readiness import mark_completed_today

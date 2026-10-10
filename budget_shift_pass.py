@@ -132,6 +132,12 @@ ACTION_LOG_PATH = os.path.join(_DIR, 'budget_shift_log.csv')
 AD_SET_AGE_OVERRIDE_PATH = os.path.join(_DIR, 'ad_set_age_overrides.json')
 
 
+
+def _meta_req(url):
+    """Meta Graph request with the token in the Authorization header, never in the URL or its paging links
+    (rules/ads-api-safety.md; 2026-10-10)."""
+    return urllib.request.Request(url, headers={'Authorization': 'Bearer ' + os.environ.get('META_ACCESS_TOKEN', '')})
+
 def _load_age_overrides():
     if os.path.exists(AD_SET_AGE_OVERRIDE_PATH):
         try:
@@ -265,8 +271,8 @@ def get_meta_budgets():
 
     # Get active in-scope campaign IDs
     url = (f'https://graph.facebook.com/{ver}/{acc}/campaigns?'
-           f'fields=id,name,effective_status&limit=100&access_token={tok}')
-    with urllib.request.urlopen(url, timeout=30) as r:
+           f'fields=id,name,effective_status&limit=100')
+    with urllib.request.urlopen(_meta_req(url), timeout=30) as r:
         camps = json.loads(r.read().decode()).get('data', [])
 
     overrides = _load_age_overrides()
@@ -277,8 +283,8 @@ def get_meta_budgets():
         ctype = next((t for t in META_IN_SCOPE if t in cname), None)
         if not ctype: continue
         url2 = (f'https://graph.facebook.com/{ver}/{c["id"]}/adsets?'
-                f'fields=id,name,effective_status,daily_budget,created_time&limit=100&access_token={tok}')
-        with urllib.request.urlopen(url2, timeout=30) as r:
+                f'fields=id,name,effective_status,daily_budget,created_time&limit=100')
+        with urllib.request.urlopen(_meta_req(url2), timeout=30) as r:
             adsets = json.loads(r.read().decode()).get('data', [])
         for a in adsets:
             if a.get('effective_status') != 'ACTIVE': continue

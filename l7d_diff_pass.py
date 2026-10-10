@@ -57,7 +57,7 @@ def build_diff_message(prod_entry, res_l7d, d1):
     new_kills = [c for c in l7d_kills if c not in prod_kills]   # L7D kills it, prod did not
 
     lines = [
-        f":test_tube: *EXPERIMENTAL (L7D variant) kill-pass diff* ({d1.isoformat()}, DEL BOOKNOW)",
+        f":test_tube: *EXPERIMENTAL (L7D variant) kill-pass diff* ({d1.isoformat()}, DEL SCALE BOOKNOW)",
         "_Not a recommendation - do not act on this. Compares production's actual logged decisions "
         "against an L7-day-CPBC variant still under observation. DM-only, never posted to #demand-reports._",
         "",
@@ -115,7 +115,9 @@ def main():
 
     last_activation = rp.get_last_activation_dates(d1)
     data, age, cstar, funnel_geo = rp.compute(d1, last_activation)
-    active, _ad_ids_map = rp.meta_active_del()
+    # v2.13 (2026-10-10): the production kill log now records the DEL_SCALE_BFC pool (DEL_ALL_PBFC paused 10-Oct),
+    # so the L7D variant is judged on the same pool and active set.
+    active, _ad_ids_map = rp.meta_active_by_adset({rp.DEL_SCALE_BFC_ADSET})[rp.DEL_SCALE_BFC_ADSET]
     # 2026-09-12 (Nikhil, caught live): meta_active_del() returns (None, {}) whenever the
     # Meta call fails for any reason (that day it was a transient Meta 500 during a burst of
     # API traffic elsewhere) - decide()'s act() treats active=None as "no filter, include
@@ -132,7 +134,7 @@ def main():
         print('active-status unavailable this run (Meta call failed) - skipping the L7D diff '
               'post rather than risk flagging long-paused creatives as live candidates')
         return
-    res_l7d = rp.decide(data, age, cstar, active, funnel_geo=funnel_geo, variant='l7d')
+    res_l7d = rp.decide(data, age, cstar, active, funnel_geo=funnel_geo, variant='l7d', pool_key='Delhi_Scale')
 
     msg = build_diff_message(prod_entry, res_l7d, d1)
     if args.dry_run:

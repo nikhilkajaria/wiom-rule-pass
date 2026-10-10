@@ -45,6 +45,12 @@ PRE_WEEK = ('2026-08-31', '2026-09-06')   # Mon-Sun, before the Sep7 deploy
 POST_WEEK = ('2026-09-07', '2026-09-13')  # Mon-Sun, after
 
 
+
+def _meta_req(url):
+    """Meta Graph request with the token in the Authorization header, never in the URL or its paging links
+    (rules/ads-api-safety.md; 2026-10-10)."""
+    return urllib.request.Request(url, headers={'Authorization': 'Bearer ' + os.environ.get('META_ACCESS_TOKEN', '')})
+
 def meta_week(since, until):
     tok = os.environ['META_ACCESS_TOKEN']
     acc = os.environ.get('META_AD_ACCOUNT_ID', rp.META_ACC_DEFAULT)
@@ -56,12 +62,11 @@ def meta_week(since, until):
         'fields': 'campaign_name,clicks,actions',
         'time_range': json.dumps({'since': since, 'until': until}),
         'limit': 500,
-        'access_token': tok,
     })
     clicks = 0
     installs = 0
     while url:
-        with urllib.request.urlopen(url, timeout=60) as r:
+        with urllib.request.urlopen(_meta_req(url), timeout=60) as r:
             j = json.loads(r.read().decode())
         for row in j.get('data', []):
             if row.get('campaign_name') not in META_CAMPS:
