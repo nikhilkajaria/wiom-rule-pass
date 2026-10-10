@@ -1,6 +1,7 @@
-name: Weekly RETARGETING kill+prune (DM only)
+name: Daily RETARGETING kill+prune
 
-# Monday-morning review of the RETARGETING ad set, DM-only for now (not promoted to
+# 2026-10-11 (Nikhil): now DAILY like the DEL_SCALE kill pass - see rmkt_daily_pass.py. Posts to #demand-reports + DM.
+# Was: Monday-morning review of the RETARGETING ad set, DM-only for now (not promoted to
 # #demand-reports yet - see rmkt_weekly_pass.py). Same 3-attempt dashboard-readiness retry
 # pattern as daily-rule-pass.yml, since rmkt_weekly_pass.py uses the same readiness gate -
 # just all three attempts land on Monday instead of every day.
@@ -16,13 +17,13 @@ name: Weekly RETARGETING kill+prune (DM only)
 # only ranking), so it gets the fourth offset (+19 min).
 on:
   schedule:
-    - cron: '19 8 * * 1'
-    - cron: '19 10 * * 1'
-    - cron: '19 12 * * 1'
+    - cron: '19 8 * * *'
+    - cron: '19 10 * * *'
+    - cron: '19 12 * * *'
   workflow_dispatch: {}
 
 jobs:
-  rmkt-weekly:
+  rmkt-daily:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -42,13 +43,13 @@ jobs:
         id: retry
         run: |
           case "${{ github.event.schedule }}" in
-            "19 8 * * 1")  echo "flag=" >> "$GITHUB_OUTPUT" ;;
-            "19 10 * * 1") echo "flag=" >> "$GITHUB_OUTPUT" ;;
-            "19 12 * * 1") echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;
+            "19 8 * * *")  echo "flag=" >> "$GITHUB_OUTPUT" ;;
+            "19 10 * * *") echo "flag=" >> "$GITHUB_OUTPUT" ;;
+            "19 12 * * *") echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;
             *)            echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;  # workflow_dispatch - one shot
           esac
-      - name: Run weekly RETARGETING pass and post to Slack (DM only)
-        run: python rmkt_weekly_pass.py ${{ steps.retry.outputs.flag }}
+      - name: Run daily RETARGETING pass and post to Slack (#demand-reports + DM)
+        run: python rmkt_daily_pass.py ${{ steps.retry.outputs.flag }}
         env:
           WIOM_DASHBOARD_TOKEN: ${{ secrets.WIOM_DASHBOARD_TOKEN }}
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
@@ -66,17 +67,19 @@ jobs:
           GOOGLE_ADS_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_CUSTOMER_ID }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           # SLACK_DM_USER_ID defaults to U05A9037VFG. Override here only if it changes.
-      - name: Commit readiness state (idempotency marker)
+      - name: Commit readiness state + RMKT kill log
         # Same pattern as daily-rule-pass.yml's own commit step - own file
         # (rmkt_weekly_readiness_state.json), so nothing to merge/conflict against
         # the daily pass's or budget-shift-pass's own state files.
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
-          if [ -f rmkt_weekly_readiness_state.json ]; then
-            git add rmkt_weekly_readiness_state.json
+          for f in rmkt_daily_readiness_state.json rmkt_kill_pass_log.json rmkt_kill_action_log.csv; do
+            if [ -f "$f" ]; then git add "$f"; fi
+          done
+          if true; then
             if ! git diff --cached --quiet; then
-              git commit -m "rmkt-weekly readiness state: $(date -u +%Y-%m-%d)"
+              git commit -m "rmkt-daily state + kill log: $(date -u +%Y-%m-%d)"
               for i in 1 2 3 4 5; do
                 if git push; then
                   break

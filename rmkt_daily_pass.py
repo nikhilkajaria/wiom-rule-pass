@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Weekly RETARGETING (DEL_ALL_BFC RMKT) kill+prune review - DM only for now.
+"""Daily RETARGETING (DEL_ALL_BFC RMKT) kill+prune - #demand-reports + DM, same treatment as the DEL_SCALE pool.
+
+v2 (2026-10-11, Nikhil: "change the RMKT pass to a daily pass just like SCALE"): was rmkt_weekly_pass.py (Mondays).
+Now daily with the same 3-attempt readiness gate, the live same-day top-spender deferral, and its OWN kill log /
+retro not-acted check / action log (rmkt_kill_pass_log.json, rmkt_kill_action_log.csv - kept apart from the BFC-VOLUME
+pool's kill_pass_log.json so the two pools' recos never mix). No Recos-sheet sync (that sheet is the BFC-VOLUME pool's).
+History below is the original weekly design note.
+
 
 Reuses rule_pass.py's decide()/msg_daily() machinery (generic over any data/age/cstar/active
 input) scoped to the RETARGETING campaign instead of BFC-VOLUME, since rule_pass.py itself
@@ -13,7 +20,7 @@ maturity-adjustment, peer-median-not-C*) - this is a starting shape, not a finis
 WEEKLY (not daily) and posts DM-only, always, regardless of any future --dm-only flag removal -
 this stays DM-only until explicitly promoted to #demand-reports.
 
-Usage: python rmkt_weekly_pass.py [--dry-run] [--date YYYY-MM-DD]
+Usage: python rmkt_daily_pass.py [--dry-run] [--date YYYY-MM-DD] [--last-retry]
 """
 import argparse
 import datetime
@@ -24,6 +31,8 @@ import os
 import urllib.request
 
 RMKT_ADSET = "DEL_ALL_BFC_L0-L1-L2_RMKT-VV75-MAST90_BOOKNOW_APPSTORE_ABO_RETARGETING_MULTI_NA"
+RMKT_LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'rmkt_kill_pass_log.json')
+RMKT_ACTION_LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'rmkt_kill_action_log.csv')
 
 
 
@@ -180,11 +189,11 @@ def main():
 
     # Same dashboard-readiness gate as rule_pass.py's daily run (2026-07-17) - only for a real,
     # unattended scheduled run, not a --dry-run preview or a --date backtest. Separate
-    # script_name ('rmkt_weekly') so this pass's idempotent-completion tracking never collides
+    # script_name ('rmkt_daily') so this pass's idempotent-completion tracking never collides
     # with the daily BFC-VOLUME pass's own state.
     if not args.dry_run and not args.date:
         from dashboard_readiness import is_dashboard_data_ready, already_completed_today, mark_completed_today
-        if already_completed_today('rmkt_weekly', d1):
+        if already_completed_today('rmkt_daily', d1):
             print(f'already completed for {d1} - skipping (idempotent retry guard)')
             return
         ready, dash_total, actual_total = is_dashboard_data_ready(d1)
@@ -193,7 +202,7 @@ def main():
             act_s = f"Rs{actual_total:,.0f}" if actual_total is not None else 'n/a'
             if args.last_retry:
                 rp.slack_post(
-                    f":rotating_light: *RETARGETING weekly kill+prune* - dashboard data for {d1} still "
+                    f":rotating_light: *DEL RMKT BOOKNOW - RETARGETING daily kill+prune* - dashboard data for {d1} still "
                     f"incomplete after 3 attempts (dashboard spend {dash_s} vs actual Meta+Google spend {act_s}). "
                     f"Pass did NOT run today - check the dashboard ETL.",
                     dm_only=True)
@@ -208,19 +217,41 @@ def main():
     data, age, cstar, funnel_geo = rmkt_compute(d1, last_activation)
     res = rp.decide(data, age, cstar, active, funnel_geo=funnel_geo)
 
-    msg = (rp.msg_daily(res, cstar, end, label='')
-           .replace('BFC-VOLUME', 'RETARGETING')
-           .replace('daily kill + prune', 'weekly kill + prune')
-           .replace('daily cap', 'per-run cap'))
+    # Live same-day top-spender deferral - same as rule_pass.py main(): a KILL on one of today's top-2 live spenders
+    # moves to MONITOR (shown under PROTECTED), so nobody pauses what is becoming the ad set's biggest spender right now.
+    res['deferred_live_spend'] = []
+    if not args.date:
+        today_spend = rp.meta_today_spend(ad_ids_map, d1 + datetime.timedelta(days=1))
+        top_today = {c for c in sorted(today_spend, key=lambda c: -today_spend[c])[:2] if today_spend[c] > 0} if today_spend else set()
+        if top_today:
+            keep = []
+            for k in res['kills']:
+                if k[0] in top_today:
+                    res['deferred_live_spend'].append(k); res['verdict'][k[0]] = 'MONITOR'; res['monitor'] += 1
+                else:
+                    keep.append(k)
+            res['kills'] = keep
+
+    # Own kill log + retro 'not acted' check (rule_pass's log helpers read the module-level paths at call time).
+    rp.LOG_PATH, rp.ACTION_LOG_PATH = RMKT_LOG_PATH, RMKT_ACTION_LOG_PATH
+    still_flagged_today = ({k[0] for k in res.get('kills', [])} | {k[0] for k in res.get('deferred_kills', [])} |
+                           {t[0] for t in res.get('deferred_top_spender', [])} | {t[0] for t in res.get('deferred_live_spend', [])})
+    log = rp.load_log()
+    unacted = rp.retro_check(log, d1, still_flagged_today=still_flagged_today)
+    if not args.dry_run:
+        rp.write_action_log_csv(log, d1)
+        rp.save_log(rp.write_log_entry(log, res, d1, ad_ids_map, res['median']))
+
+    msg = (rp.msg_daily(res, cstar, end, unacted=unacted, label='DEL RMKT BOOKNOW')
+           .replace('BFC-VOLUME', 'RETARGETING'))
 
     if args.dry_run:
         print(msg)
     else:
-        rp.slack_post(msg, dm_only=False)  # promoted to #demand-reports + DM, 2026-09-15 (Nikhil)
+        rp.slack_post(msg, dm_only=False)  # #demand-reports + DM (promoted 2026-09-15, Nikhil)
         if not args.date:
             from dashboard_readiness import mark_completed_today
-            mark_completed_today('rmkt_weekly', d1)  # after the post succeeds, so a crash mid-run allows retry
-
+            mark_completed_today('rmkt_daily', d1)  # after the post succeeds, so a crash mid-run allows retry
 
 if __name__ == '__main__':
     main()

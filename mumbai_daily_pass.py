@@ -60,8 +60,8 @@ LIVE_DATE = datetime.date(2026, 9, 12)
 STATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'mumbai_pass_state.json')
 CPM_TRIP, SPL_WEEK_FLOOR, PASS_FLOOR, RS_PER_REACH, FREQ_CAP, CPI_TARGET, CONN_TARGET = 75.0, 50, 0.70, 0.25, 5.0, 110.0, 35
 MODEL = dict(cpm='50-55', installs_mo=3700, spl_mo=730, bookings_mo=186, conns_mo=43)
-CREATIVE_WINDOW_DAYS = 14  # rolling, same as bharat_weekly_pass.py; floored at LIVE_DATE so it's
-                           # "since live" until the pool actually has 14 days of history
+CREATIVE_WINDOW_DAYS = 7   # rolling; 14 -> 7 on 2026-10-11 (Nikhil: all non-Delhi reads are 7-day), same as
+                           # geo_daily_pass.py. Floored at LIVE_DATE.
 
 
 

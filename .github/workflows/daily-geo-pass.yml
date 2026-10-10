@@ -1,27 +1,18 @@
-name: Weekly BHARAT_ALL_SPL review (DM only)
+name: Daily BHARAT_ALL_SPL + BHARAT_LUCKNOW_SPL monitors (DM only)
 
-# Monday-morning review of BHARAT_ALL_SPL, DM-only, advisory (not a kill pass) - see
-# bharat_weekly_pass.py. Same 3-attempt dashboard-readiness retry pattern as
-# weekly-rmkt-pass.yml/daily-rule-pass.yml, all three attempts on Monday.
-#   08:25 UTC Mon = 13:55 IST - attempt 1
-#   10:25 UTC Mon = 15:55 IST - attempt 2
-#   12:25 UTC Mon = 17:55 IST - attempt 3 (last retry - alerts DM instead of quietly
-#                                postponing if data is still not ready)
-#
-# Minute offset (2026-09-16): staggered off the round hour along with every
-# other daily/weekly pass in this repo, to avoid GH Actions' round-minute
-# cron congestion (see daily-rule-pass.yml for the full writeup). This is
-# an advisory-only ranking (no kill logic), so it gets the fifth offset
-# (+25 min) - lower priority than every kill/action pass in the stagger.
+# 2026-10-11 (Nikhil: "put Lucknow and Bharat also like Mumbai ... 7-day reads"): replaces the Monday
+# weekly-bharat-pass.yml. geo_daily_pass.py runs once per geo, DM only, with the same 3-attempt
+# dashboard-readiness ladder as the Mumbai pass, offset +37 min (after Mumbai's +31).
+#   08:37 UTC = 14:07 IST attempt 1 | 10:37 UTC = 16:07 IST attempt 2 | 12:37 UTC = 18:07 IST attempt 3 (last retry)
 on:
   schedule:
-    - cron: '25 8 * * 1'
-    - cron: '25 10 * * 1'
-    - cron: '25 12 * * 1'
+    - cron: '37 8 * * *'
+    - cron: '37 10 * * *'
+    - cron: '37 12 * * *'
   workflow_dispatch: {}
 
 jobs:
-  bharat-weekly:
+  geo-daily:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,13 +31,14 @@ jobs:
         id: retry
         run: |
           case "${{ github.event.schedule }}" in
-            "25 8 * * 1")  echo "flag=" >> "$GITHUB_OUTPUT" ;;
-            "25 10 * * 1") echo "flag=" >> "$GITHUB_OUTPUT" ;;
-            "25 12 * * 1") echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;
+            "37 8 * * *")  echo "flag=" >> "$GITHUB_OUTPUT" ;;
+            "37 10 * * *") echo "flag=" >> "$GITHUB_OUTPUT" ;;
+            "37 12 * * *") echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;
             *)            echo "flag=--last-retry" >> "$GITHUB_OUTPUT" ;;  # workflow_dispatch - one shot
           esac
-      - name: Run weekly BHARAT_ALL_SPL review and post to Slack (DM only)
-        run: python bharat_weekly_pass.py ${{ steps.retry.outputs.flag }}
+      - name: Run bharat daily pass and DM
+        if: always()
+        run: python geo_daily_pass.py --geo bharat ${{ steps.retry.outputs.flag }}
         env:
           WIOM_DASHBOARD_TOKEN: ${{ secrets.WIOM_DASHBOARD_TOKEN }}
           # bharat_weekly_pass.py itself never calls Meta/Google directly, but
@@ -64,17 +56,40 @@ jobs:
           GOOGLE_ADS_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_CUSTOMER_ID }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           # SLACK_DM_USER_ID defaults to U05A9037VFG. Override here only if it changes.
-      - name: Commit readiness state (idempotency marker)
+      - name: Run lucknow daily pass and DM
+        if: always()
+        run: python geo_daily_pass.py --geo lucknow ${{ steps.retry.outputs.flag }}
+        env:
+          WIOM_DASHBOARD_TOKEN: ${{ secrets.WIOM_DASHBOARD_TOKEN }}
+          # bharat_weekly_pass.py itself never calls Meta/Google directly, but
+          # dashboard_readiness.py's own actual-spend cross-check does
+          # (get_actual_meta_spend_day()/get_actual_google_spend_day()) - missing
+          # here caused actual_total to silently come back None ("actual=n/a" in
+          # the run log) on 2026-09-07, so is_dashboard_data_ready() could never
+          # return True and every scheduled run gave up without doing real work.
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+          META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
+          GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
+          GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}
+          GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}
+          GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}
+          GOOGLE_ADS_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_CUSTOMER_ID }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          # SLACK_DM_USER_ID defaults to U05A9037VFG. Override here only if it changes.
+      - name: Commit state (budget snapshots + readiness markers)
+        if: always()
         # Same pattern as weekly-rmkt-pass.yml's own commit step - own file
-        # (bharat_weekly_readiness_state.json), so nothing to merge/conflict against
+        # (geo_pass_state.json + per-geo readiness files), so nothing to merge/conflict against
         # any other pass's own state files.
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
-          if [ -f bharat_weekly_readiness_state.json ]; then
-            git add bharat_weekly_readiness_state.json
+          for f in geo_pass_state.json bharat_daily_readiness_state.json lucknow_daily_readiness_state.json; do
+            if [ -f "$f" ]; then git add "$f"; fi
+          done
+          if true; then
             if ! git diff --cached --quiet; then
-              git commit -m "bharat-weekly readiness state: $(date -u +%Y-%m-%d)"
+              git commit -m "geo-daily state: $(date -u +%Y-%m-%d)"
               for i in 1 2 3 4 5; do
                 if git push; then
                   break

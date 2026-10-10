@@ -25,9 +25,8 @@ import urllib.request
 import rule_pass as rp
 
 REPO = 'nikhilkajaria/wiom-rule-pass'
+# 2026-10-11: Bharat (geo_daily_pass.py) and RMKT (rmkt_daily_pass.py) are daily now - only the weekly rule pass is left.
 WORKFLOWS = [
-    ('weekly-bharat-pass.yml', 'Weekly BHARAT_ALL_SPL review'),
-    ('weekly-rmkt-pass.yml', 'Weekly RETARGETING kill+prune'),
     ('weekly-rule-pass.yml', 'Weekly BFC-VOLUME review (ISOLATE/geo)'),
 ]
 
