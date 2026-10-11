@@ -2445,5 +2445,28 @@
     "date": "2026-10-09",
     "median_cpbc": 1097.47,
     "recos": []
+  },
+  {
+    "date": "2026-10-10",
+    "median_cpbc": 854.01,
+    "recos": [
+      {
+        "concept_id": "OCT26-C-157",
+        "layer": "L3",
+        "need": "L3-MULTI",
+        "verdict": "KILL",
+        "reason": "efficiency (> 1.2x median Rs854)",
+        "cpbc": 1155.56,
+        "bc": 5,
+        "spend": 5777.79,
+        "median_at_time": 854.01,
+        "top_spender": false,
+        "ad_ids": [
+          "120252274283280343"
+        ],
+        "action_taken": null,
+        "action_timing": null
+      }
+    ]
   }
 ]
