@@ -1,0 +1,43 @@
+[
+  {
+    "date": "2026-10-10",
+    "median_cpbc": 463.13,
+    "recos": [
+      {
+        "concept_id": "OCT26-C-160",
+        "layer": "L2",
+        "need": "UCR",
+        "verdict": "KILL",
+        "reason": "efficiency (> 1.0x median Rs463)",
+        "cpbc": 635.24,
+        "bc": 21,
+        "spend": 13340.12,
+        "median_at_time": 463.13,
+        "top_spender": false,
+        "ad_ids": [
+          "120252342553700343",
+          "120252324681750343"
+        ],
+        "action_taken": null,
+        "action_timing": null
+      },
+      {
+        "concept_id": "SEP26-T-132",
+        "layer": "L2",
+        "need": "FLEX",
+        "verdict": "KILL",
+        "reason": "efficiency (> 1.0x median Rs463)",
+        "cpbc": 535.76,
+        "bc": 5,
+        "spend": 2678.78,
+        "median_at_time": 463.13,
+        "top_spender": false,
+        "ad_ids": [
+          "120252064453830343"
+        ],
+        "action_taken": null,
+        "action_timing": null
+      }
+    ]
+  }
+]
