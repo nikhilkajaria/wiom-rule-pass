@@ -1,0 +1,3 @@
+reco_date,concept_id,layer,need_state,bc,spend,cpbc,median_at_time,reason,ad_ids,action_taken,action_timing
+2026-10-10,OCT26-C-160,L2,UCR,21,13340.12,635.24,463.13,efficiency (> 1.0x median Rs463),120252342553700343|120252324681750343,No,
+2026-10-10,SEP26-T-132,L2,FLEX,5,2678.78,535.76,463.13,efficiency (> 1.0x median Rs463),120252064453830343,No,
