@@ -2,63 +2,63 @@
   "phase": "shift",
   "shift": {
     "initiated_date": "2026-09-21",
-    "step": 20,
+    "step": 21,
     "source_allocations": [
       {
         "name": "GOOGLE_BA_DEL_SCALE_ABO_SEARCH_L2_04072026",
         "amount": 100.0,
-        "cpbl": 1410.571249,
-        "bc": 4
+        "cpbl": 1830.2449239999999,
+        "bc": 3
       },
       {
         "name": "BHARAT_LUCKNOW_SPL_L1-L2-L3_BROAD_BOOKNOW_APPSTORE_ABO_BFC-VOLUME_MULTI_NA",
         "amount": 700.0,
-        "cpbl": 1269.396153846154,
-        "bc": 26
+        "cpbl": 1244.3977777777777,
+        "bc": 27
       },
       {
         "name": "GOOGLE_BA_DEL_SCALE_ABO_UAC_BFC-VOLUME_010626",
         "amount": 11900.0,
-        "cpbl": 924.2121992457388,
-        "bc": 704
+        "cpbl": 937.0414047800829,
+        "bc": 723
       }
     ],
     "dest_allocations": [
       {
         "name": "GOOGLE_BA_DEL_SCALE_ABO_SEARCH_BRAND_01072026",
         "amount": 500.0,
-        "cpbl": 159.07251725641024,
-        "bc": 78
+        "cpbl": 171.9743959565217,
+        "bc": 69
       },
       {
         "name": "GOOGLE_BA_DEL_SCALE_ABO_DEMANDGEN_RMKT_BFC-VOLUME_150926",
         "amount": 1400.0,
-        "cpbl": 432.9363294305556,
-        "bc": 144
+        "cpbl": 449.2800757931035,
+        "bc": 145
       },
       {
         "name": "BHARAT_ALL_SPL_L1-L2-L3_BROAD_MULTI_APPSTORE_ABO_BFC-VOLUME_MULTI_NA",
         "amount": 1100.0,
-        "cpbl": 485.8062499999999,
-        "bc": 112
+        "cpbl": 469.09224137931034,
+        "bc": 116
       },
       {
         "name": "DEL_ALL_BFC_L0-L1-L2_RMKT-VV75-MAST90_BOOKNOW_APPSTORE_ABO_RETARGETING_MULTI_NA",
         "amount": 6500.0,
-        "cpbl": 489.29921414538313,
-        "bc": 509
+        "cpbl": 556.2854491017965,
+        "bc": 501
       },
       {
         "name": "GOOGLE_BA_DEL_SCALE_ABO_DEMANDGEN_YT_BFC_VOLUME_10062026",
         "amount": 3200.0,
-        "cpbl": 581.7909019711539,
-        "bc": 208
+        "cpbl": 633.9394875073172,
+        "bc": 205
       }
     ],
-    "blended_cpbl": 733.6,
-    "last_step_date": "2026-10-10",
-    "last_step_time": "2026-10-11T20:24:06.284881+00:00",
-    "next_step_date": "2026-10-11"
+    "blended_cpbl": 759.3,
+    "last_step_date": "2026-10-11",
+    "last_step_time": "2026-10-12T23:22:10.648801+00:00",
+    "next_step_date": "2026-10-12"
   },
   "stabilization_end": null,
   "schema": "v2.3"
