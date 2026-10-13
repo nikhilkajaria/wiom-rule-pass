@@ -114,6 +114,16 @@ DEL_SCALE_BFC_ADSET   = 'DEL_SCALE_BFC_L1-L2-L3_BROAD_MULTI_APPSTORE_ABO_BFC-VOL
 # retro 'not acted' check, Recos sheet, action-log CSV, live same-day top-spender deferral, C* and maturity DMs and
 # the weekly review. The PBFC pool is judged and posted ONLY while it has live ACTIVE BOOKNOW ads, so its Slack
 # messages stop while it is paused and come back by themselves if it is ever re-enabled.
+# v2.14 (2026-10-13, Nikhil): ad sets whose name carries one of these tokens are left out of every pool. HIGHSE88 =
+# the Meta A/B test of the good-zone opt event (DEL_HIGHSE88_BFC_... vs DEL_HIGHSE88_BFCGZ_..., same 10 ads in both
+# arms). Without this, geo_of() sends both arms to the 'Delhi' (PBFC) pool and the pass would post KILL/PRUNE calls on
+# test ads - acting on one arm breaks the A/B. The test judges its own ads; remove the token when the test ends.
+EXCLUDED_ADSET_TOKENS = ('HIGHSE88',)
+
+
+def excluded_adset(name):
+    n = (name or '').upper()
+    return any(t in n for t in EXCLUDED_ADSET_TOKENS)
 
 # ---- logging constants ----
 LOG_PATH        = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'kill_pass_log.json')
@@ -243,6 +253,7 @@ def meta_active_del():
                 camp = ((a.get('campaign') or {}).get('name') or '').upper()
                 aset = ((a.get('adset') or {}).get('name') or '').upper()
                 if 'BFC-VOLUME' not in camp or 'BOOKNOW' not in nm.upper() or 'DEL' not in aset: continue
+                if excluded_adset(aset): continue   # v2.14: test ad sets (see EXCLUDED_ADSET_TOKENS)
                 m = CONCEPT_RE.search(nm)
                 if m:
                     cid = m.group(0)
@@ -812,6 +823,7 @@ def compute(d1, last_activation=None):
     raw = collections.defaultdict(lambda: collections.defaultdict(list))
     for r in rows:
         if r.get('channel') != 'META' or 'BFC-VOLUME' not in str(r.get('campaign', '')).upper(): continue
+        if excluded_adset(r.get('ad_set', '')): continue   # v2.14: test ad sets (see EXCLUDED_ADSET_TOKENS)
         nm = str(r.get('creative', ''))
         if 'BOOKNOW' not in nm.upper(): continue
         m = CONCEPT_RE.search(nm)
@@ -863,6 +875,7 @@ def compute(d1, last_activation=None):
         frows = dget('/api/funnel_rows?' + urllib.parse.urlencode({'start': metric_start, 'end': d1.isoformat()}))
         for r in frows:
             aset = str(r.get('ad_set', '')); camp = str(r.get('campaign', ''))
+            if excluded_adset(aset): continue   # v2.14: test ad sets (see EXCLUDED_ADSET_TOKENS)
             g = geo_of(aset) or geo_of(camp)
             if not g: continue
             fg = funnel_geo[g]
