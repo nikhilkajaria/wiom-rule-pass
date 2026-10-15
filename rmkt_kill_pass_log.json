@@ -175,6 +175,29 @@
           "120252342553700343",
           "120252324681750343"
         ],
+        "action_taken": "No",
+        "action_timing": null
+      }
+    ]
+  },
+  {
+    "date": "2026-10-14",
+    "median_cpbc": 522.72,
+    "recos": [
+      {
+        "concept_id": "SEP26-T-149",
+        "layer": "L2",
+        "need": "MCR",
+        "verdict": "KILL",
+        "reason": "efficiency (> 1.0x median Rs523)",
+        "cpbc": 825.89,
+        "bc": 32,
+        "spend": 26428.63,
+        "median_at_time": 522.72,
+        "top_spender": false,
+        "ad_ids": [
+          "120252379877080343"
+        ],
         "action_taken": null,
         "action_timing": null
       }
