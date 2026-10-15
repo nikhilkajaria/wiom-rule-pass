@@ -15,6 +15,10 @@
   "2026-10-13": {
    "budget": 7500.0,
    "learning": "SUCCESS"
+  },
+  "2026-10-14": {
+   "budget": 6400.0,
+   "learning": "SUCCESS"
   }
  },
  "lucknow": {
@@ -33,6 +37,10 @@
   "2026-10-13": {
    "budget": 5000.0,
    "learning": null
+  },
+  "2026-10-14": {
+   "budget": 5000.0,
+   "learning": "SUCCESS"
   }
  }
 }
