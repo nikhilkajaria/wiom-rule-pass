@@ -9,3 +9,4 @@ reco_date,concept_id,layer,need_state,bc,spend,cpbc,median_at_time,reason,ad_ids
 2026-10-12,SEP26-C-124,L2,UCR,20,11774.89,588.74,528.29,efficiency (> 1.0x median Rs528),120251926626140343,No,
 2026-10-13,OCT26-C-160,L2,UCR,41,27871.96,679.8,462.66,efficiency (> 1.0x median Rs463),120252342553700343|120252324681750343,No,
 2026-10-14,SEP26-T-149,L2,MCR,32,26428.63,825.89,522.72,efficiency (> 1.0x median Rs523),120252379877080343,Yes,Late
+2026-10-15,SEP26-C-135,L2,MCR,176,74457.4,423.05,421.76,efficiency (> 1.0x median Rs422),120252006866530343,No,
